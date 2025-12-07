@@ -737,4 +737,4 @@ with col_temp2:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        fig2.update_yaxes(title_text="
+   
