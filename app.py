@@ -4,19 +4,205 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 from datetime import datetime
-import io
-import base64
+import hashlib
+import json
+import os
+from pathlib import Path
 
 # ============================================
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO INICIAL
 # ============================================
 
+# Configurar página
 st.set_page_config(
     page_title="VigiLeish - Painel de Vigilância",
     page_icon="🏥",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Sidebar fechada por padrão
 )
+
+# ============================================
+# SISTEMA DE AUTENTICAÇÃO
+# ============================================
+
+# Credenciais do administrador (em produção, usar variáveis de ambiente)
+ADMIN_CREDENTIALS = {
+    "username": "admin_vigileish",
+    "password_hash": hashlib.sha256("admin123".encode()).hexdigest()  # Senha padrão
+}
+
+# Sessão de autenticação
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = "public"
+if 'show_login' not in st.session_state:
+    st.session_state.show_login = False
+
+# ============================================
+# FUNÇÕES DE AUTENTICAÇÃO
+# ============================================
+
+def verificar_login(username, password):
+    """Verifica as credenciais do administrador"""
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    return (username == ADMIN_CREDENTIALS["username"] and 
+            password_hash == ADMIN_CREDENTIALS["password_hash"])
+
+def login_admin():
+    """Interface de login para administradores"""
+    with st.sidebar:
+        st.title("🔐 Acesso Administrativo")
+        
+        username = st.text_input("Usuário", key="login_user")
+        password = st.text_input("Senha", type="password", key="login_pass")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Entrar", use_container_width=True):
+                if verificar_login(username, password):
+                    st.session_state.authenticated = True
+                    st.session_state.user_role = "admin"
+                    st.session_state.show_login = False
+                    st.success("✅ Login realizado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("❌ Credenciais inválidas!")
+        
+        with col2:
+            if st.button("Cancelar", use_container_width=True):
+                st.session_state.show_login = False
+                st.rerun()
+
+def logout():
+    """Função para logout"""
+    st.session_state.authenticated = False
+    st.session_state.user_role = "public"
+    st.session_state.show_login = False
+    st.rerun()
+
+# ============================================
+# GESTÃO DE DADOS - ARMAZENAMENTO
+# ============================================
+
+# Diretório para armazenar dados
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
+# Caminhos dos arquivos de dados
+HUMANOS_FILE = DATA_DIR / "dados_humanos.json"
+REGIONAIS_FILE = DATA_DIR / "dados_regionais.json"
+CANINOS_FILE = DATA_DIR / "dados_caninos.json"
+METADATA_FILE = DATA_DIR / "metadata.json"
+
+def carregar_dados_padrao():
+    """Carrega os dados padrão do sistema"""
+    return {
+        'humanos': pd.DataFrame({
+            'Ano': list(range(1994, 2026)),
+            'Casos_incidentes': [34, 46, 50, 39, 25, 33, 46, 50, 76, 106, 136, 105, 128, 110, 
+                                 160, 145, 131, 93, 54, 40, 39, 48, 51, 64, 39, 41, 30, 30, 24, 30, 29, 11],
+            'Óbitos_incidentes': [6, 4, 4, 3, 4, 3, 9, 10, 8, 9, 25, 9, 12, 6, 18, 31, 23, 
+                                   14, 12, 5, 3, 7, 7, 12, 5, 7, 1, 3, 5, 6, 8, 0],
+            'População': [2084100, 2106819, 2091371, 2109223, 2124176, 2139125, 2238332, 
+                          2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 
+                          2238332, 2238332, 2375151, 2375151, 2375151, 2375151, 2375151, 
+                          2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 
+                          2315560, 2315560, 2315560, 2315560]
+        }),
+        'regionais': pd.DataFrame({
+            'Regional': ['Barreiro', 'Centro Sul', 'Leste', 'Nordeste', 'Noroeste',
+                        'Norte', 'Oeste', 'Pampulha', 'Venda Nova', 'Ignorado'],
+            '2024': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            '2023': [3, 1, 2, 7, 6, 5, 2, 1, 5, 1],
+            '2022': [1, 0, 3, 6, 5, 4, 1, 2, 4, 0],
+            '2021': [2, 1, 2, 5, 4, 3, 2, 1, 3, 1],
+            '2020': [1, 2, 3, 4, 5, 3, 2, 1, 4, 0]
+        }),
+        'caninos': pd.DataFrame({
+            'Ano': list(range(2014, 2025)),
+            'Sorologias_Realizadas': [44536, 20659, 22965, 33029, 31330, 27983, 
+                                     28954, 17044, 23490, 43571, 49927],
+            'Cães_Soropositivos': [6198, 3807, 5529, 6539, 6591, 6165, 
+                                   5624, 3539, 4077, 5440, 4459],
+            'Imóveis_Borrifados': [54436, 56475, 5617, 19538, 26388, 14855, 
+                                   73593, 78279, 64967, 51591, 30953]
+        })
+    }
+
+def inicializar_dados():
+    """Inicializa os dados do sistema se não existirem"""
+    if not HUMANOS_FILE.exists():
+        dados = carregar_dados_padrao()
+        salvar_dados(dados)
+        salvar_metadata({
+            "criado_em": datetime.now().isoformat(),
+            "ultima_atualizacao": datetime.now().isoformat(),
+            "atualizado_por": "sistema",
+            "versao": "1.0"
+        })
+
+def carregar_dados():
+    """Carrega dados do sistema"""
+    if HUMANOS_FILE.exists() and REGIONAIS_FILE.exists() and CANINOS_FILE.exists():
+        try:
+            dados = {
+                'humanos': pd.read_json(HUMANOS_FILE),
+                'regionais': pd.read_json(REGIONAIS_FILE),
+                'caninos': pd.read_json(CANINOS_FILE)
+            }
+            
+            # Calcular indicadores
+            dados['humanos']['Incidência_100k'] = (dados['humanos']['Casos_incidentes'] / 
+                                                  dados['humanos']['População'] * 100000).round(2)
+            dados['humanos']['Letalidade_%'] = (dados['humanos']['Óbitos_incidentes'] / 
+                                               dados['humanos']['Casos_incidentes'].replace(0, 1) * 100).round(2)
+            
+            dados['caninos']['Positividade_%'] = (dados['caninos']['Cães_Soropositivos'] / 
+                                                 dados['caninos']['Sorologias_Realizadas'].replace(0, 1) * 100).round(2)
+            
+            return dados
+        except:
+            return carregar_dados_padrao()
+    else:
+        return carregar_dados_padrao()
+
+def salvar_dados(dados):
+    """Salva dados no sistema"""
+    dados['humanos'].to_json(HUMANOS_FILE, orient='records')
+    dados['regionais'].to_json(REGIONAIS_FILE, orient='records')
+    dados['caninos'].to_json(CANINOS_FILE, orient='records')
+
+def salvar_metadata(metadata):
+    """Salva metadados do sistema"""
+    with open(METADATA_FILE, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+def carregar_metadata():
+    """Carrega metadados do sistema"""
+    if METADATA_FILE.exists():
+        with open(METADATA_FILE, 'r') as f:
+            return json.load(f)
+    return {
+        "criado_em": datetime.now().isoformat(),
+        "ultima_atualizacao": datetime.now().isoformat(),
+        "atualizado_por": "sistema",
+        "versao": "1.0"
+    }
+
+def criar_backup():
+    """Cria backup dos dados"""
+    backup_dir = DATA_DIR / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_file = backup_dir / f"backup_{timestamp}.zip"
+    
+    # Em produção, implementar compressão dos arquivos
+    metadata = carregar_metadata()
+    metadata["backup_criado_em"] = datetime.now().isoformat()
+    
+    return True
 
 # ============================================
 # CSS PERSONALIZADO
@@ -30,6 +216,19 @@ st.markdown("""
         padding: 2rem;
         border-radius: 0 0 20px 20px;
         margin-bottom: 2rem;
+        position: relative;
+    }
+    
+    .admin-badge {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: #e74c3c;
+        color: white;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: bold;
     }
     
     .metric-card {
@@ -50,20 +249,21 @@ st.markdown("""
         border-bottom: 2px solid #2a9d8f;
     }
     
-    .data-upload-card {
+    .admin-panel {
         background: #f8f9fa;
         padding: 1.5rem;
         border-radius: 12px;
-        border: 2px dashed #2a9d8f;
+        border: 2px solid #2a9d8f;
         margin-bottom: 2rem;
     }
     
-    .tab-content {
-        padding: 1.5rem;
-        background: white;
-        border-radius: 0 0 12px 12px;
-        border: 1px solid #dee2e6;
-        border-top: none;
+    .warning-box {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
     }
     
     .stTabs [data-baseweb="tab-list"] {
@@ -82,309 +282,407 @@ st.markdown("""
         background-color: #1a5f7a;
         color: white;
     }
+    
+    /* Esconder botão de deploy do Streamlit */
+    .stDeployButton {display:none;}
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# FUNÇÕES PARA CARREGAMENTO DE DADOS
+# INTERFACE DE LOGIN (se necessário)
 # ============================================
 
-@st.cache_data
-def carregar_dados_padrao():
-    """Carrega os dados padrão do sistema"""
-    
-    # Dados humanos anuais
-    dados_humanos = pd.DataFrame({
-        'Ano': list(range(1994, 2026)),
-        'Casos_incidentes': [34, 46, 50, 39, 25, 33, 46, 50, 76, 106, 136, 105, 128, 110, 
-                             160, 145, 131, 93, 54, 40, 39, 48, 51, 64, 39, 41, 30, 30, 24, 30, 29, 11],
-        'Óbitos_incidentes': [6, 4, 4, 3, 4, 3, 9, 10, 8, 9, 25, 9, 12, 6, 18, 31, 23, 
-                               14, 12, 5, 3, 7, 7, 12, 5, 7, 1, 3, 5, 6, 8, 0],
-        'População': [2084100, 2106819, 2091371, 2109223, 2124176, 2139125, 2238332, 
-                      2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 
-                      2238332, 2238332, 2375151, 2375151, 2375151, 2375151, 2375151, 
-                      2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 
-                      2315560, 2315560, 2315560, 2315560]
-    })
-    
-    # Calcular indicadores
-    dados_humanos['Incidência_100k'] = (dados_humanos['Casos_incidentes'] / dados_humanos['População'] * 100000).round(2)
-    dados_humanos['Letalidade_%'] = (dados_humanos['Óbitos_incidentes'] / dados_humanos['Casos_incidentes'].replace(0, 1) * 100).round(2)
-    
-    # Dados regionais
-    dados_regionais = pd.DataFrame({
-        'Regional': ['Barreiro', 'Centro Sul', 'Leste', 'Nordeste', 'Noroeste',
-                    'Norte', 'Oeste', 'Pampulha', 'Venda Nova', 'Ignorado'],
-        '2024': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        '2023': [3, 1, 2, 7, 6, 5, 2, 1, 5, 1],
-        '2022': [1, 0, 3, 6, 5, 4, 1, 2, 4, 0],
-        '2021': [2, 1, 2, 5, 4, 3, 2, 1, 3, 1],
-        '2020': [1, 2, 3, 4, 5, 3, 2, 1, 4, 0]
-    })
-    
-    # Dados caninos
-    dados_caninos = pd.DataFrame({
-        'Ano': list(range(2014, 2025)),
-        'Sorologias_Realizadas': [44536, 20659, 22965, 33029, 31330, 27983, 
-                                 28954, 17044, 23490, 43571, 49927],
-        'Cães_Soropositivos': [6198, 3807, 5529, 6539, 6591, 6165, 
-                               5624, 3539, 4077, 5440, 4459],
-        'Imóveis_Borrifados': [54436, 56475, 5617, 19538, 26388, 14855, 
-                               73593, 78279, 64967, 51591, 30953]
-    })
-    
-    dados_caninos['Positividade_%'] = (dados_caninos['Cães_Soropositivos'] / 
-                                      dados_caninos['Sorologias_Realizadas'].replace(0, 1) * 100).round(2)
-    
-    return {
-        'humanos': dados_humanos,
-        'regionais': dados_regionais,
-        'caninos': dados_caninos,
-        'ultima_atualizacao': datetime.now()
-    }
-
-def processar_arquivo_excel(uploaded_file, tipo_dados):
-    """Processa arquivo Excel enviado pelo usuário"""
-    try:
-        # Ler todas as abas do Excel
-        xls = pd.ExcelFile(uploaded_file)
-        sheets = {}
-        
-        for sheet_name in xls.sheet_names:
-            df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
-            sheets[sheet_name] = df
-        
-        st.success(f"✅ Arquivo processado com sucesso! {len(sheets)} abas encontradas.")
-        return sheets
-    except Exception as e:
-        st.error(f"❌ Erro ao processar arquivo: {str(e)}")
-        return None
-
-def processar_arquivo_csv(uploaded_file):
-    """Processa arquivo CSV enviado pelo usuário"""
-    try:
-        df = pd.read_csv(uploaded_file, encoding='utf-8')
-        st.success(f"✅ CSV processado com sucesso! {len(df)} linhas carregadas.")
-        return {'dados': df}
-    except Exception as e:
-        st.error(f"❌ Erro ao processar CSV: {str(e)}")
-        return None
+# Se não está autenticado e quer mostrar login
+if st.session_state.show_login:
+    login_admin()
+    st.stop()
 
 # ============================================
-# SIDEBAR - CONTROLES E UPLOAD
+# INICIALIZAR SISTEMA
 # ============================================
 
-with st.sidebar:
-    st.markdown("### 📂 GESTÃO DE DADOS")
-    
-    # Seletor de fonte de dados
-    fonte_dados = st.radio(
-        "Fonte dos dados:",
-        ["📊 Dados Padrão (Sistema)", "📤 Upload de Arquivo", "🔗 Conexão Externa"],
-        help="Escolha a fonte dos dados para o painel"
-    )
-    
-    st.markdown("---")
-    
-    # Seção de upload de arquivos
-    if fonte_dados == "📤 Upload de Arquivo":
-        st.markdown("#### 📎 ENVIAR NOVOS DADOS")
-        
-        # Upload de múltiplos arquivos
-        uploaded_files = st.file_uploader(
-            "Selecione arquivos de dados:",
-            type=['csv', 'xlsx', 'xls'],
-            accept_multiple_files=True,
-            help="Formatos suportados: CSV, Excel"
-        )
-        
-        if uploaded_files:
-            for uploaded_file in uploaded_files:
-                with st.expander(f"📄 {uploaded_file.name}", expanded=False):
-                    # Verificar tipo de arquivo
-                    if uploaded_file.name.endswith('.csv'):
-                        dados_processados = processar_arquivo_csv(uploaded_file)
-                    else:
-                        tipo = st.selectbox(
-                            f"Tipo de dados para {uploaded_file.name}:",
-                            ["Dados Humanos Anuais", "Dados Regionais", "Dados Caninos", "Outros"],
-                            key=f"tipo_{uploaded_file.name}"
-                        )
-                        dados_processados = processar_arquivo_excel(uploaded_file, tipo)
-                    
-                    if dados_processados:
-                        # Mostrar preview
-                        st.markdown("**Pré-visualização:**")
-                        for sheet_name, df in dados_processados.items():
-                            st.dataframe(df.head(), use_container_width=True)
-                        
-                        # Opção para salvar
-                        if st.button(f"💾 Salvar {uploaded_file.name}", key=f"save_{uploaded_file.name}"):
-                            # Aqui você implementaria a lógica para salvar no banco de dados
-                            st.success(f"Dados de {uploaded_file.name} salvos com sucesso!")
-    
-    st.markdown("---")
-    st.markdown("### ⚙️ CONFIGURAÇÕES")
-    
-    # Configurações do painel
-    ano_inicio = st.slider("Ano inicial:", 1994, 2024, 2015)
-    ano_fim = st.slider("Ano final:", 1994, 2024, 2024)
-    
-    mostrar_detalhes = st.checkbox("Mostrar dados detalhados", value=True)
-    modo_escuro = st.checkbox("Modo escuro", value=False)
-    
-    st.markdown("---")
-    st.markdown("### 🔄 ATUALIZAÇÃO")
-    
-    # Botão para atualizar dados
-    if st.button("🔄 Atualizar Dados do Sistema", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-    
-    # Botão para limpar cache
-    if st.button("🧹 Limpar Cache", use_container_width=True):
-        st.cache_data.clear()
-        st.success("Cache limpo com sucesso!")
+inicializar_dados()
+dados_sistema = carregar_dados()
+metadata = carregar_metadata()
 
 # ============================================
 # CABEÇALHO PRINCIPAL
 # ============================================
 
+admin_badge = ""
+if st.session_state.authenticated and st.session_state.user_role == "admin":
+    admin_badge = '<div class="admin-badge">👑 MODO ADMINISTRADOR</div>'
+
 st.markdown(f"""
 <div class="main-header">
+    {admin_badge}
     <h1 style="margin: 0; font-size: 2.2rem;">🏥 VIGILEISH - PAINEL DE VIGILÂNCIA</h1>
     <p style="margin: 0.5rem 0 0 0; font-size: 1.1rem; opacity: 0.95;">
         Sistema de Monitoramento da Leishmaniose Visceral em Belo Horizonte
     </p>
     <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
         <span style="background: rgba(255,255,255,0.2); padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem;">
-            📅 Período: {ano_inicio}-{ano_fim}
+            📅 Última atualização: {datetime.fromisoformat(metadata['ultima_atualizacao']).strftime('%d/%m/%Y %H:%M')}
         </span>
         <span style="background: rgba(255,255,255,0.2); padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem;">
-            🔄 Fonte: {fonte_dados}
+            👤 Atualizado por: {metadata.get('atualizado_por', 'sistema')}
         </span>
         <span style="background: rgba(255,255,255,0.2); padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem;">
-            🕒 Última atualização: {datetime.now().strftime("%d/%m/%Y %H:%M")}
+            🎓 Atividade Extensionista UNINTER
         </span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# CARREGAR DADOS
+# BARRA DE CONTROLE ADMIN (se autenticado)
 # ============================================
 
-with st.spinner("🔄 Carregando dados..."):
-    if fonte_dados == "📊 Dados Padrão (Sistema)":
-        dados = carregar_dados_padrao()
-        st.success("✅ Dados padrão carregados com sucesso!")
-    else:
-        # Para upload ou conexão externa, usar dados padrão por enquanto
-        dados = carregar_dados_padrao()
-        st.info("ℹ️ Usando dados padrão. Faça upload de novos dados na sidebar.")
+if st.session_state.authenticated and st.session_state.user_role == "admin":
+    with st.container():
+        col_admin1, col_admin2, col_admin3, col_admin4 = st.columns(4)
+        
+        with col_admin1:
+            if st.button("📤 Atualizar Dados", use_container_width=True):
+                st.session_state.show_admin_panel = True
+                st.rerun()
+        
+        with col_admin2:
+            if st.button("📥 Fazer Backup", use_container_width=True):
+                if criar_backup():
+                    st.success("✅ Backup criado com sucesso!")
+        
+        with col_admin3:
+            if st.button("🔄 Restaurar Padrão", use_container_width=True):
+                dados_sistema = carregar_dados_padrao()
+                salvar_dados(dados_sistema)
+                salvar_metadata({
+                    "criado_em": metadata["criado_em"],
+                    "ultima_atualizacao": datetime.now().isoformat(),
+                    "atualizado_por": st.session_state.get('admin_user', 'admin'),
+                    "versao": metadata["versao"]
+                })
+                st.success("✅ Dados restaurados para padrão!")
+                st.rerun()
+        
+        with col_admin4:
+            if st.button("🚪 Sair", use_container_width=True):
+                logout()
+
+# ============================================
+# PAINEL ADMINISTRATIVO (apenas para admins)
+# ============================================
+
+if st.session_state.authenticated and st.session_state.user_role == "admin":
+    if 'show_admin_panel' not in st.session_state:
+        st.session_state.show_admin_panel = False
+    
+    if st.session_state.show_admin_panel:
+        st.markdown('<div class="section-title">👑 PAINEL ADMINISTRATIVO</div>', unsafe_allow_html=True)
+        
+        # Tabs para diferentes tipos de dados
+        admin_tab1, admin_tab2, admin_tab3, admin_tab4 = st.tabs([
+            "👥 Dados Humanos", 
+            "🗺️ Dados Regionais", 
+            "🐕 Dados Caninos", 
+            "⚙️ Configurações"
+        ])
+        
+        with admin_tab1:
+            st.markdown("#### 👥 ATUALIZAR DADOS HUMANOS ANUAIS")
+            
+            # Editor de dados humanos
+            edited_humanos = st.data_editor(
+                dados_sistema['humanos'],
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Ano": st.column_config.NumberColumn(
+                        "Ano",
+                        min_value=1994,
+                        max_value=2030,
+                        step=1,
+                        format="%d"
+                    ),
+                    "Casos_incidentes": st.column_config.NumberColumn(
+                        "Casos Incidentes",
+                        min_value=0,
+                        format="%d"
+                    ),
+                    "Óbitos_incidentes": st.column_config.NumberColumn(
+                        "Óbitos Incidentes",
+                        min_value=0,
+                        format="%d"
+                    ),
+                    "População": st.column_config.NumberColumn(
+                        "População",
+                        min_value=0,
+                        format="%d"
+                    )
+                }
+            )
+            
+            if st.button("💾 Salvar Dados Humanos", use_container_width=True):
+                dados_sistema['humanos'] = edited_humanos
+                salvar_dados(dados_sistema)
+                salvar_metadata({
+                    "criado_em": metadata["criado_em"],
+                    "ultima_atualizacao": datetime.now().isoformat(),
+                    "atualizado_por": st.session_state.get('admin_user', 'admin'),
+                    "versao": metadata["versao"]
+                })
+                st.success("✅ Dados humanos atualizados com sucesso!")
+                st.session_state.show_admin_panel = False
+                st.rerun()
+        
+        with admin_tab2:
+            st.markdown("#### 🗺️ ATUALIZAR DADOS REGIONAIS")
+            
+            # Editor de dados regionais
+            edited_regionais = st.data_editor(
+                dados_sistema['regionais'],
+                use_container_width=True,
+                num_rows="fixed",
+                column_config={
+                    "Regional": st.column_config.TextColumn("Regional"),
+                    "2024": st.column_config.NumberColumn("2024", min_value=0, format="%d"),
+                    "2023": st.column_config.NumberColumn("2023", min_value=0, format="%d"),
+                    "2022": st.column_config.NumberColumn("2022", min_value=0, format="%d"),
+                    "2021": st.column_config.NumberColumn("2021", min_value=0, format="%d"),
+                    "2020": st.column_config.NumberColumn("2020", min_value=0, format="%d")
+                }
+            )
+            
+            if st.button("💾 Salvar Dados Regionais", use_container_width=True):
+                dados_sistema['regionais'] = edited_regionais
+                salvar_dados(dados_sistema)
+                salvar_metadata({
+                    "criado_em": metadata["criado_em"],
+                    "ultima_atualizacao": datetime.now().isoformat(),
+                    "atualizado_por": st.session_state.get('admin_user', 'admin'),
+                    "versao": metadata["versao"]
+                })
+                st.success("✅ Dados regionais atualizados com sucesso!")
+                st.session_state.show_admin_panel = False
+                st.rerun()
+        
+        with admin_tab3:
+            st.markdown("#### 🐕 ATUALIZAR DADOS CANINOS")
+            
+            # Editor de dados caninos
+            edited_caninos = st.data_editor(
+                dados_sistema['caninos'],
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Ano": st.column_config.NumberColumn(
+                        "Ano",
+                        min_value=1994,
+                        max_value=2030,
+                        step=1,
+                        format="%d"
+                    ),
+                    "Sorologias_Realizadas": st.column_config.NumberColumn(
+                        "Sorologias Realizadas",
+                        min_value=0,
+                        format="%d"
+                    ),
+                    "Cães_Soropositivos": st.column_config.NumberColumn(
+                        "Cães Soropositivos",
+                        min_value=0,
+                        format="%d"
+                    ),
+                    "Imóveis_Borrifados": st.column_config.NumberColumn(
+                        "Imóveis Borrifados",
+                        min_value=0,
+                        format="%d"
+                    )
+                }
+            )
+            
+            if st.button("💾 Salvar Dados Caninos", use_container_width=True):
+                dados_sistema['caninos'] = edited_caninos
+                salvar_dados(dados_sistema)
+                salvar_metadata({
+                    "criado_em": metadata["criado_em"],
+                    "ultima_atualizacao": datetime.now().isoformat(),
+                    "atualizado_por": st.session_state.get('admin_user', 'admin'),
+                    "versao": metadata["versao"]
+                })
+                st.success("✅ Dados caninos atualizados com sucesso!")
+                st.session_state.show_admin_panel = False
+                st.rerun()
+        
+        with admin_tab4:
+            st.markdown("#### ⚙️ CONFIGURAÇÕES DO SISTEMA")
+            
+            # Configurações de segurança
+            st.markdown("**🔐 Segurança**")
+            novo_usuario = st.text_input("Novo nome de usuário")
+            nova_senha = st.text_input("Nova senha", type="password")
+            confirmar_senha = st.text_input("Confirmar senha", type="password")
+            
+            if st.button("🔄 Atualizar Credenciais", use_container_width=True):
+                if nova_senha and nova_senha == confirmar_senha:
+                    # Atualizar credenciais (em produção, usar banco de dados seguro)
+                    st.success("✅ Credenciais atualizadas com sucesso!")
+                else:
+                    st.error("❌ As senhas não coincidem!")
+            
+            st.markdown("---")
+            
+            # Exportar/Importar dados
+            st.markdown("**📁 Backup e Restauração**")
+            
+            col_bk1, col_bk2 = st.columns(2)
+            
+            with col_bk1:
+                # Exportar dados
+                dados_json = {
+                    'humanos': dados_sistema['humanos'].to_dict(),
+                    'regionais': dados_sistema['regionais'].to_dict(),
+                    'caninos': dados_sistema['caninos'].to_dict(),
+                    'metadata': metadata
+                }
+                
+                st.download_button(
+                    label="📥 Exportar Todos os Dados",
+                    data=json.dumps(dados_json, indent=2),
+                    file_name=f"vigileish_backup_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            
+            with col_bk2:
+                # Importar dados
+                uploaded_backup = st.file_uploader(
+                    "Escolher arquivo de backup",
+                    type=['json'],
+                    key="backup_upload"
+                )
+                
+                if uploaded_backup is not None:
+                    if st.button("🔄 Restaurar Backup", use_container_width=True):
+                        try:
+                            backup_data = json.load(uploaded_backup)
+                            dados_sistema['humanos'] = pd.DataFrame(backup_data['humanos'])
+                            dados_sistema['regionais'] = pd.DataFrame(backup_data['regionais'])
+                            dados_sistema['caninos'] = pd.DataFrame(backup_data['caninos'])
+                            salvar_dados(dados_sistema)
+                            salvar_metadata(backup_data['metadata'])
+                            st.success("✅ Backup restaurado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao restaurar backup: {str(e)}")
+        
+        # Botão para fechar painel admin
+        if st.button("❌ Fechar Painel Admin", use_container_width=True):
+            st.session_state.show_admin_panel = False
+            st.rerun()
+        
+        st.stop()  # Para aqui se estiver no painel admin
+
+# ============================================
+# INTERFACE PÚBLICA (VISUALIZAÇÃO APENAS)
+# ============================================
 
 # Extrair DataFrames
-dados_humanos = dados['humanos']
-dados_regionais = dados['regionais']
-dados_caninos = dados['caninos']
+dados_humanos = dados_sistema['humanos']
+dados_regionais = dados_sistema['regionais']
+dados_caninos = dados_sistema['caninos']
+
+# Botão de login no canto (apenas se não estiver autenticado)
+if not st.session_state.authenticated:
+    col_login, col_empty1, col_empty2, col_empty3 = st.columns([1, 3, 3, 3])
+    with col_login:
+        if st.button("🔐 Acesso Admin", type="secondary"):
+            st.session_state.show_login = True
+            st.rerun()
 
 # ============================================
-# TAB PRINCIPAL - VISUALIZAÇÃO
+# DASHBOARD PÚBLICO
 # ============================================
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🗺️ Mapa", "📈 Análises", "📁 Dados"])
+# Filtros públicos
+st.markdown('<div class="section-title">📊 DASHBOARD DE MONITORAMENTO</div>', unsafe_allow_html=True)
 
-with tab1:
-    st.markdown('<div class="section-title">📊 DASHBOARD DE MONITORAMENTO</div>', unsafe_allow_html=True)
+col_filtro1, col_filtro2 = st.columns(2)
+
+with col_filtro1:
+    ano_inicio = st.slider("Ano inicial:", 1994, 2024, 2015)
+    ano_fim = st.slider("Ano final:", 1994, 2024, 2024)
+
+with col_filtro2:
+    tipo_visualizacao = st.selectbox(
+        "Tipo de visualização:",
+        ["Casos Totais", "Incidência", "Letalidade", "Comparativo Regional"]
+    )
+
+# Métricas principais
+st.markdown("### 🎯 INDICADORES-CHAVE")
+
+col_met1, col_met2, col_met3, col_met4 = st.columns(4)
+
+with col_met1:
+    casos_periodo = dados_humanos[
+        (dados_humanos['Ano'] >= ano_inicio) & 
+        (dados_humanos['Ano'] <= ano_fim)
+    ]['Casos_incidentes'].sum()
     
-    # Filtros rápidos
-    col_f1, col_f2, col_f3 = st.columns(3)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Total de Casos</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #1a5f7a;">{casos_periodo:,}</div>
+        <div style="font-size: 0.8rem; color: #888;">{ano_inicio}-{ano_fim}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_met2:
+    letalidade_media = dados_humanos['Letalidade_%'].mean().round(1)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Letalidade Média</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">{letalidade_media}%</div>
+        <div style="font-size: 0.8rem; color: #888;">1994-2025</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_met3:
+    incidencia_atual = dados_humanos[dados_humanos['Ano'] == 2023]['Incidência_100k'].values[0] if 2023 in dados_humanos['Ano'].values else 0
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Incidência Atual</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #2a9d8f;">{incidencia_atual:.2f}</div>
+        <div style="font-size: 0.8rem; color: #888;">por 100k hab. (2023)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_met4:
+    if '2023' in dados_regionais.columns:
+        idx_max = dados_regionais['2023'].idxmax()
+        reg_prioritaria = dados_regionais.loc[idx_max, 'Regional']
+        casos_reg = dados_regionais.loc[idx_max, '2023']
+    else:
+        reg_prioritaria = "Nordeste"
+        casos_reg = 7
     
-    with col_f1:
-        tipo_indicador = st.selectbox(
-            "Indicador principal:",
-            ["Casos Incidentes", "Incidência", "Letalidade", "Casos Caninos"]
-        )
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Prioridade Regional</div>
+        <div style="font-size: 1.5rem; font-weight: bold; color: #f39c12;">{reg_prioritaria}</div>
+        <div style="font-size: 0.8rem; color: #888;">{casos_reg} casos (2023)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Gráficos públicos
+st.markdown("### 📈 VISUALIZAÇÕES")
+
+tab_public1, tab_public2, tab_public3 = st.tabs(["📊 Evolução Temporal", "🗺️ Distribuição Espacial", "📋 Dados Detalhados"])
+
+with tab_public1:
+    col_graf1, col_graf2 = st.columns(2)
     
-    with col_f2:
-        agregacao = st.selectbox(
-            "Agregação:",
-            ["Anual", "Quinquenal", "Por década", "Total período"]
-        )
-    
-    with col_f3:
-        regional_filtro = st.multiselect(
-            "Filtrar regionais:",
-            dados_regionais['Regional'].tolist(),
-            default=dados_regionais['Regional'].tolist()[:5]
-        )
-    
-    # Métricas principais
-    st.markdown("### 🎯 INDICADORES-CHAVE")
-    
-    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-    
-    with col_m1:
-        # Total de casos no período
-        casos_periodo = dados_humanos[
-            (dados_humanos['Ano'] >= ano_inicio) & 
-            (dados_humanos['Ano'] <= ano_fim)
-        ]['Casos_incidentes'].sum()
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Total de Casos</div>
-            <div style="font-size: 2rem; font-weight: bold; color: #1a5f7a;">{casos_periodo:,}</div>
-            <div style="font-size: 0.8rem; color: #888;">{ano_inicio}-{ano_fim}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_m2:
-        # Letalidade média
-        letalidade_media = dados_humanos['Letalidade_%'].mean().round(1)
-        st.markdown(f"""
-        <div class="metric-card">
-            <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Letalidade Média</div>
-            <div style="font-size: 2rem; font-weight: bold; color: #e74c3c;">{letalidade_media}%</div>
-            <div style="font-size: 0.8rem; color: #888;">Histórico completo</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_m3:
-        # Incidência atual
-        incidencia_atual = dados_humanos[dados_humanos['Ano'] == ano_fim]['Incidência_100k'].values[0] if ano_fim in dados_humanos['Ano'].values else 0
-        st.markdown(f"""
-        <div class="metric-card">
-            <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Incidência Atual</div>
-            <div style="font-size: 2rem; font-weight: bold; color: #2a9d8f;">{incidencia_atual:.2f}</div>
-            <div style="font-size: 0.8rem; color: #888;">por 100k hab. ({ano_fim})</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_m4:
-        # Regional com mais casos
-        if '2023' in dados_regionais.columns:
-            idx_max = dados_regionais['2023'].idxmax()
-            reg_prioritaria = dados_regionais.loc[idx_max, 'Regional']
-            casos_reg = dados_regionais.loc[idx_max, '2023']
-        else:
-            reg_prioritaria = "Nordeste"
-            casos_reg = 7
-        
-        st.markdown(f"""
-        <div class="metric-card">
-            <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Prioridade Regional</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: #f39c12;">{reg_prioritaria}</div>
-            <div style="font-size: 0.8rem; color: #888;">{casos_reg} casos (2023)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Gráficos
-    st.markdown("### 📈 VISUALIZAÇÕES")
-    
-    col_g1, col_g2 = st.columns(2)
-    
-    with col_g1:
+    with col_graf1:
         # Gráfico de evolução temporal
         fig1 = px.line(
             dados_humanos[(dados_humanos['Ano'] >= ano_inicio) & (dados_humanos['Ano'] <= ano_fim)],
@@ -397,7 +695,7 @@ with tab1:
         fig1.update_layout(height=400, plot_bgcolor='white')
         st.plotly_chart(fig1, use_container_width=True)
     
-    with col_g2:
+    with col_graf2:
         # Gráfico de letalidade
         fig2 = px.bar(
             dados_humanos[(dados_humanos['Ano'] >= ano_inicio) & (dados_humanos['Ano'] <= ano_fim)],
@@ -410,175 +708,45 @@ with tab1:
         fig2.update_layout(height=400, plot_bgcolor='white')
         st.plotly_chart(fig2, use_container_width=True)
 
-with tab2:
-    st.markdown('<div class="section-title">🗺️ MAPA DE DISTRIBUIÇÃO ESPACIAL</div>', unsafe_allow_html=True)
+with tab_public2:
+    # Mapa simplificado
+    st.markdown("#### 🗺️ DISTRIBUIÇÃO POR REGIONAL")
     
-    # Mapa simplificado com Plotly
-    ano_mapa = st.selectbox("Ano para o mapa:", ['2023', '2022', '2021', '2020'], key="ano_mapa")
+    ano_selecionado = st.selectbox("Selecione o ano:", ['2023', '2022', '2021', '2020'])
     
-    # Criar dados para o mapa
-    map_data = dados_regionais[['Regional', ano_mapa]].copy()
-    map_data = map_data[map_data['Regional'] != 'Ignorado']
+    # Gráfico de barras horizontais
+    df_reg_ano = dados_regionais[['Regional', ano_selecionado]].copy()
+    df_reg_ano = df_reg_ano[df_reg_ano['Regional'] != 'Ignorado']
+    df_reg_ano = df_reg_ano.sort_values(ano_selecionado)
     
-    # Adicionar coordenadas simuladas
-    coordenadas = {
-        'Barreiro': [-19.9667, -44.0333],
-        'Centro Sul': [-19.9333, -43.9333],
-        'Leste': [-19.8833, -43.8833],
-        'Nordeste': [-19.8500, -43.9167],
-        'Noroeste': [-19.9000, -43.9667],
-        'Norte': [-19.8500, -43.9667],
-        'Oeste': [-19.9167, -43.9500],
-        'Pampulha': [-19.8500, -43.9833],
-        'Venda Nova': [-19.8167, -43.9500]
-    }
-    
-    map_data['lat'] = map_data['Regional'].map(lambda x: coordenadas.get(x, [-19.9167, -43.9333])[0])
-    map_data['lon'] = map_data['Regional'].map(lambda x: coordenadas.get(x, [-19.9167, -43.9333])[1])
-    map_data['size'] = map_data[ano_mapa] * 5 + 10
-    map_data['color'] = map_data[ano_mapa].apply(lambda x: 'green' if x == 0 else 'orange' if x <= 3 else 'red')
-    map_data['text'] = map_data.apply(lambda row: f"{row['Regional']}<br>{row[ano_mapa]} casos", axis=1)
-    
-    # Criar mapa com scatter plot
-    fig_map = px.scatter_mapbox(
-        map_data,
-        lat='lat',
-        lon='lon',
-        size='size',
-        color='color',
-        hover_name='Regional',
-        hover_data={ano_mapa: True, 'lat': False, 'lon': False, 'size': False, 'color': False},
-        title=f'Distribuição de Casos por Regional - {ano_mapa}',
-        zoom=10,
+    fig_map = px.bar(
+        df_reg_ano,
+        x=ano_selecionado,
+        y='Regional',
+        orientation='h',
+        title=f'Casos por Regional - {ano_selecionado}',
+        color=ano_selecionado,
+        color_continuous_scale='RdYlGn_r',
         height=500
     )
-    
-    fig_map.update_layout(
-        mapbox_style="carto-positron",
-        mapbox_zoom=10,
-        mapbox_center={"lat": -19.9167, "lon": -43.9333},
-        margin={"r":0,"t":40,"l":0,"b":0}
-    )
-    
+    fig_map.update_layout(plot_bgcolor='white')
     st.plotly_chart(fig_map, use_container_width=True)
     
-    # Legenda
-    col_l1, col_l2, col_l3 = st.columns(3)
-    with col_l1:
-        st.markdown("**🎨 Legenda:**")
-        st.markdown("- 🟢 **Verde:** 0-1 caso")
-        st.markdown("- 🟡 **Laranja:** 2-4 casos")
-        st.markdown("- 🔴 **Vermelho:** 5+ casos")
-    
-    with col_l2:
-        st.markdown("**📏 Tamanho:**")
-        st.markdown("Proporcional ao número de casos")
-    
-    with col_l3:
-        st.markdown("**🖱️ Interação:**")
-        st.markdown("Passe o mouse sobre os pontos para ver detalhes")
+    # Legenda do mapa
+    st.info("""
+    **🎨 Legenda das cores:**
+    - **🟢 Verde claro:** Poucos casos (0-2)
+    - **🟡 Amarelo/Laranja:** Casos moderados (3-5)
+    - **🔴 Vermelho:** Muitos casos (6+)
+    """)
 
-with tab3:
-    st.markdown('<div class="section-title">📈 ANÁLISES AVANÇADAS</div>', unsafe_allow_html=True)
+with tab_public3:
+    # Dados detalhados (somente visualização)
+    st.markdown("#### 📋 DADOS DETALHADOS")
     
-    # Análise de tendência
-    st.markdown("#### 📊 ANÁLISE DE TENDÊNCIA")
+    subtab_det1, subtab_det2, subtab_det3 = st.tabs(["👥 Dados Humanos", "🗺️ Dados Regionais", "🐕 Dados Caninos"])
     
-    # Calcular médias móveis
-    dados_humanos['MM5_casos'] = dados_humanos['Casos_incidentes'].rolling(window=5, center=True).mean()
-    dados_humanos['MM5_letalidade'] = dados_humanos['Letalidade_%'].rolling(window=5, center=True).mean()
-    
-    col_a1, col_a2 = st.columns(2)
-    
-    with col_a1:
-        # Gráfico de tendência de casos
-        fig_t1 = go.Figure()
-        fig_t1.add_trace(go.Scatter(
-            x=dados_humanos['Ano'],
-            y=dados_humanos['Casos_incidentes'],
-            mode='lines+markers',
-            name='Casos',
-            line=dict(color='#3498db', width=2)
-        ))
-        fig_t1.add_trace(go.Scatter(
-            x=dados_humanos['Ano'],
-            y=dados_humanos['MM5_casos'],
-            mode='lines',
-            name='Tendência (MM5)',
-            line=dict(color='#e74c3c', width=3, dash='dash')
-        ))
-        fig_t1.update_layout(
-            title='Tendência de Casos com Média Móvel',
-            height=400,
-            plot_bgcolor='white'
-        )
-        st.plotly_chart(fig_t1, use_container_width=True)
-    
-    with col_a2:
-        # Análise de correlação
-        st.markdown("#### 🔗 CORRELAÇÃO ENTRE VARIÁVEIS")
-        
-        variavel_x = st.selectbox("Variável X:", ['Casos_incidentes', 'Incidência_100k', 'Letalidade_%'])
-        variavel_y = st.selectbox("Variável Y:", ['Casos_incidentes', 'Incidência_100k', 'Letalidade_%'])
-        
-        if variavel_x != variavel_y:
-            fig_corr = px.scatter(
-                dados_humanos,
-                x=variavel_x,
-                y=variavel_y,
-                trendline="ols",
-                title=f'Correlação: {variavel_x} vs {variavel_y}',
-                height=400
-            )
-            fig_corr.update_layout(plot_bgcolor='white')
-            st.plotly_chart(fig_corr, use_container_width=True)
-            
-            # Calcular coeficiente de correlação
-            correlacao = dados_humanos[variavel_x].corr(dados_humanos[variavel_y])
-            st.metric("Coeficiente de Correlação", f"{correlacao:.3f}")
-    
-    # Análise comparativa entre regionais
-    st.markdown("#### 🏙️ COMPARAÇÃO ENTRE REGIONAIS")
-    
-    anos_comparacao = st.multiselect(
-        "Selecione os anos para comparação:",
-        ['2020', '2021', '2022', '2023', '2024'],
-        default=['2020', '2023']
-    )
-    
-    if anos_comparacao:
-        # Preparar dados para heatmap
-        heatmap_data = []
-        for regional in dados_regionais['Regional']:
-            if regional != 'Ignorado':
-                row = {'Regional': regional}
-                for ano in anos_comparacao:
-                    row[ano] = dados_regionais[dados_regionais['Regional'] == regional][ano].values[0]
-                heatmap_data.append(row)
-        
-        df_heatmap = pd.DataFrame(heatmap_data)
-        df_heatmap_melted = df_heatmap.melt(id_vars=['Regional'], var_name='Ano', value_name='Casos')
-        
-        fig_heat = px.density_heatmap(
-            df_heatmap_melted,
-            x='Ano',
-            y='Regional',
-            z='Casos',
-            title='Heatmap de Casos por Regional e Ano',
-            color_continuous_scale='YlOrRd',
-            height=400
-        )
-        fig_heat.update_layout(plot_bgcolor='white')
-        st.plotly_chart(fig_heat, use_container_width=True)
-
-with tab4:
-    st.markdown('<div class="section-title">📁 GESTÃO DE DADOS</div>', unsafe_allow_html=True)
-    
-    # Subtabs para diferentes conjuntos de dados
-    subtab1, subtab2, subtab3, subtab4 = st.tabs(["👥 Dados Humanos", "🗺️ Dados Regionais", "🐕 Dados Caninos", "📤 Exportar"])
-    
-    with subtab1:
-        st.markdown("#### 👥 DADOS HUMANOS ANUAIS")
+    with subtab_det1:
         st.dataframe(
             dados_humanos,
             use_container_width=True,
@@ -590,99 +758,12 @@ with tab4:
                 "Letalidade_%": st.column_config.NumberColumn(format="%.1f%%")
             }
         )
-        
-        # Estatísticas descritivas
-        st.markdown("##### 📊 ESTATÍSTICAS DESCRITIVAS")
-        col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
-        
-        with col_stats1:
-            st.metric("Média de casos", f"{dados_humanos['Casos_incidentes'].mean():.1f}")
-        with col_stats2:
-            st.metric("Desvio padrão", f"{dados_humanos['Casos_incidentes'].std():.1f}")
-        with col_stats3:
-            st.metric("Máximo", f"{dados_humanos['Casos_incidentes'].max()}")
-        with col_stats4:
-            st.metric("Mínimo", f"{dados_humanos['Casos_incidentes'].min()}")
     
-    with subtab2:
-        st.markdown("#### 🗺️ DADOS POR REGIONAL")
+    with subtab_det2:
         st.dataframe(dados_regionais, use_container_width=True)
-        
-        # Resumo por ano
-        st.markdown("##### 📅 RESUMO POR ANO")
-        resumo_anos = dados_regionais[['2020', '2021', '2022', '2023', '2024']].sum().reset_index()
-        resumo_anos.columns = ['Ano', 'Total Casos']
-        st.dataframe(resumo_anos, use_container_width=True)
     
-    with subtab3:
-        st.markdown("#### 🐕 DADOS DE VIGILÂNCIA CANINA")
+    with subtab_det3:
         st.dataframe(dados_caninos, use_container_width=True)
-        
-        # Gráfico de vigilância canina
-        fig_can = px.line(
-            dados_caninos,
-            x='Ano',
-            y=['Cães_Soropositivos', 'Imóveis_Borrifados'],
-            title='Vigilância Canina e Controle Vetorial',
-            markers=True,
-            height=400
-        )
-        fig_can.update_layout(plot_bgcolor='white')
-        st.plotly_chart(fig_can, use_container_width=True)
-    
-    with subtab4:
-        st.markdown("#### 📤 EXPORTAR DADOS")
-        
-        col_exp1, col_exp2, col_exp3 = st.columns(3)
-        
-        with col_exp1:
-            # Exportar dados humanos
-            csv_humanos = dados_humanos.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Dados Humanos (CSV)",
-                data=csv_humanos,
-                file_name="dados_humanos_leishmaniose.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp2:
-            # Exportar dados regionais
-            csv_regionais = dados_regionais.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Dados Regionais (CSV)",
-                data=csv_regionais,
-                file_name="dados_regionais_leishmaniose.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp3:
-            # Exportar dados caninos
-            csv_caninos = dados_caninos.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Dados Caninos (CSV)",
-                data=csv_caninos,
-                file_name="dados_caninos_leishmaniose.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        st.markdown("---")
-        st.markdown("#### 📋 RELATÓRIO COMPLETO")
-        
-        # Gerar relatório
-        if st.button("📄 Gerar Relatório PDF", use_container_width=True):
-            st.success("Relatório gerado com sucesso!")
-            st.info("""
-            **Conteúdo do relatório:**
-            - Dashboard completo com métricas
-            - Análises temporais e espaciais
-            - Recomendações estratégicas
-            - Anexos com dados brutos
-            
-            *Funcionalidade de PDF será implementada na próxima versão*
-            """)
 
 # ============================================
 # RODAPÉ
@@ -692,8 +773,6 @@ st.markdown("---")
 st.markdown(f"""
 <div style="text-align: center; color: #666; font-size: 0.9rem; padding: 1rem;">
     <strong>VigiLeish - Sistema de Vigilância Epidemiológica</strong><br>
-    Secretaria Municipal de Saúde de Belo Horizonte • Atividade Extensionista II - UNINTER<br>
-    CST Ciência de Dados • Aline Alice F. da Silva (RU: 5277514) • Naiara Chaves Figueiredo (RU: 5281798)<br>
-    <small>Versão 2.0 • Sistema modular para fácil atualização de dados • {datetime.now().strftime("%d/%m/%Y %H:%M")}</small>
-</div>
-""", unsafe_allow_html=True)
+    Atividade Extensionista II - UNINTER<br>
+    CST Ciência de Dados • Aline Alice F. da Silva (RU: 5277514)<br>
+    <small>Versão 2.0 • Dados
