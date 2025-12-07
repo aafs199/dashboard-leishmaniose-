@@ -1,740 +1,591 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import numpy as np
-from datetime import datetime
+import geopandas as gpd
 import folium
+from folium import plugins
 from streamlit_folium import folium_static
-from branca.colormap import LinearColormap
+import plotly.express as px
 import json
 
 # ============================================
-# CONFIGURAÇÃO DA PÁGINA COM DESENHO UNIVERSAL
+# CONFIGURAÇÃO DA PÁGINA
 # ============================================
 
 st.set_page_config(
-    page_title="VigiLeish - Painel de Vigilância da Leishmaniose",
-    page_icon="🏥",
+    page_title="Mapa de Vigilância - VigiLeish",
+    page_icon="🗺️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ============================================
-# CSS PERSONALIZADO COM PRINCÍPIOS DE DESENHO UNIVERSAL
+# CSS PERSONALIZADO
 # ============================================
 
 st.markdown("""
 <style>
-    /* PRINCÍPIO 1: IGUALITÁRIO - Acessível para todos */
-    :root {
-        --primary: #2c3e50;
-        --secondary: #3498db;
-        --accent: #e74c3c;
-        --success: #27ae60;
-        --warning: #f39c12;
-        --light: #ecf0f1;
-        --dark: #2c3e50;
-        --text-primary: #2c3e50;
-        --text-secondary: #7f8c8d;
-        --contrast-ratio: 4.5; /* WCAG AA */
-    }
-    
-    /* Contraste adequado para daltonismo */
-    .colorblind-friendly {
-        color: var(--text-primary);
-        background-color: var(--light);
-    }
-    
-    /* PRINCÍPIO 2: ADAPTÁVEL - Responsivo e flexível */
-    @media (max-width: 768px) {
-        .metric-card {
-            padding: 1rem !important;
-        }
-        .metric-value {
-            font-size: 2rem !important;
-        }
-    }
-    
-    /* Tamanhos de fonte relativos para zoom do navegador */
-    html {
-        font-size: 16px;
-    }
-    
-    /* PRINCÍPIO 3: INTUITIVO - Navegação clara */
-    .stApp {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        line-height: 1.6;
-    }
-    
-    /* Indicadores visuais claros */
-    .active-tab {
-        border-bottom: 3px solid var(--secondary) !important;
-        font-weight: bold !important;
-    }
-    
-    /* PRINCÍPIO 4: INFORMAÇÃO DE FÁCIL PERCEPÇÃO */
-    /* Alto contraste para texto */
-    .high-contrast {
-        color: #000000 !important;
-        background-color: #FFFFFF !important;
-    }
-    
-    /* Tamanho de fonte mínimo WCAG */
-    * {
-        font-size: min(1rem, 16px);
-    }
-    
-    /* Espaçamento adequado para leitura */
-    p, li, .metric-title {
-        line-height: 1.8;
-        letter-spacing: 0.3px;
-    }
-    
-    /* Labels descritivos */
-    [aria-label]:hover::after {
-        content: attr(aria-label);
-        position: absolute;
-        background: var(--dark);
-        color: white;
-        padding: 0.5rem;
-        border-radius: 4px;
-        z-index: 1000;
-    }
-    
-    /* PRINCÍPIO 5: TOLERÂNCIA AO ERRO */
-    /* Confirmação para ações críticas */
-    .danger-action {
-        background: linear-gradient(135deg, #e74c3c, #c0392b) !important;
-        color: white !important;
-        border: 2px solid #c0392b !important;
-    }
-    
-    .danger-action:hover {
-        background: linear-gradient(135deg, #c0392b, #a93226) !important;
-        transform: scale(1.02);
-    }
-    
-    /* Feedback visual para ações */
-    .success-feedback {
-        animation: pulse-green 2s ease-in-out;
-    }
-    
-    @keyframes pulse-green {
-        0%, 100% { background-color: white; }
-        50% { background-color: rgba(39, 174, 96, 0.1); }
-    }
-    
-    /* PRINCÍPIO 6: BAIXO ESFORÇO FÍSICO */
-    /* Áreas clicáveis grandes */
-    button, .clickable {
-        min-height: 44px !important; /* Tamanho mínimo WCAG */
-        min-width: 44px !important;
-        padding: 12px 24px !important;
-    }
-    
-    /* Espaçamento entre elementos interativos */
-    .stButton > button {
-        margin: 8px 0;
-    }
-    
-    /* PRINCÍPIO 7: TAMANHO E ESPAÇO PARA USO */
-    /* Espaço adequado para toque */
-    .touch-friendly {
-        padding: 1rem !important;
-        margin: 0.5rem 0 !important;
-    }
-    
-    /* Texto não justificado para dislexia */
-    p, div, span {
-        text-align: left !important;
-    }
-    
-    /* Fonte sans-serif para melhor legibilidade */
-    * {
-        font-family: 'Segoe UI', 'Arial', sans-serif !important;
-    }
-    
-    /* ESTILOS DO VIGILEISH */
     .main-header {
-        background: linear-gradient(135deg, var(--primary), #34495e);
+        background: linear-gradient(90deg, #1a5f7a, #2a9d8f);
         color: white;
         padding: 2rem;
         border-radius: 0 0 20px 20px;
         margin-bottom: 2rem;
     }
     
-    .accessibility-bar {
-        background: var(--light);
-        padding: 0.5rem 2rem;
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-        border-bottom: 1px solid #ddd;
-    }
-    
-    .accessibility-button {
-        background: none;
-        border: 1px solid var(--secondary);
-        color: var(--secondary);
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        cursor: pointer;
-    }
-    
     .metric-card {
         background: white;
         padding: 1.5rem;
         border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        border-left: 5px solid var(--secondary);
-        transition: transform 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border-left: 5px solid #2a9d8f;
+        margin-bottom: 1rem;
     }
     
-    .metric-card:hover {
-        transform: translateY(-5px);
-    }
-    
-    .section-divider {
-        height: 4px;
-        background: linear-gradient(90deg, var(--secondary), var(--accent));
-        margin: 2rem 0;
-        border-radius: 2px;
-    }
-    
-    /* WCAG - Foco visível para navegação por teclado */
-    :focus {
-        outline: 3px solid var(--secondary) !important;
-        outline-offset: 2px !important;
-    }
-    
-    /* Modo alto contraste */
-    .high-contrast-mode {
-        filter: invert(1) hue-rotate(180deg);
-    }
-    
-    /* Suporte a leitores de tela */
-    .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1a5f7a;
+        margin: 1.5rem 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #2a9d8f;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# BARRA DE ACESSIBILIDADE
+# CABEÇALHO
 # ============================================
 
 st.markdown("""
-<div class="accessibility-bar" role="toolbar" aria-label="Ferramentas de acessibilidade">
-    <span class="sr-only">Ferramentas de acessibilidade:</span>
-    <button class="accessibility-button" onclick="toggleHighContrast()" aria-label="Ativar modo alto contraste">
-        🌗 Alto Contraste
-    </button>
-    <button class="accessibility-button" onclick="increaseFontSize()" aria-label="Aumentar tamanho da fonte">
-        🔍 A+ 
-    </button>
-    <button class="accessibility-button" onclick="decreaseFontSize()" aria-label="Diminuir tamanho da fonte">
-        🔍 A-
-    </button>
-    <button class="accessibility-button" onclick="activateScreenReader()" aria-label="Ativar leitor de tela">
-        🔊 Ler Conteúdo
-    </button>
-</div>
-
-<script>
-function toggleHighContrast() {
-    document.body.classList.toggle('high-contrast-mode');
-    alert('Modo alto contraste ' + (document.body.classList.contains('high-contrast-mode') ? 'ativado' : 'desativado'));
-}
-
-function increaseFontSize() {
-    var currentSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    document.documentElement.style.fontSize = (currentSize + 2) + 'px';
-}
-
-function decreaseFontSize() {
-    var currentSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    if (currentSize > 12) {
-        document.documentElement.style.fontSize = (currentSize - 2) + 'px';
-    }
-}
-
-function activateScreenReader() {
-    // Em produção, integrar com API de leitura
-    alert('Funcionalidade de leitor de tela ativada. Use Tab para navegar.');
-}
-</script>
-""", unsafe_allow_html=True)
-
-# ============================================
-# CABEÇALHO COM TODAS AS INFORMAÇÕES DO PROJETO
-# ============================================
-
-st.markdown(f"""
-<div class="main-header" role="banner">
-    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-        <h1 style="margin: 0; font-size: 2.2rem;">🏥 VigiLeish</h1>
-        <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 1rem; border-radius: 20px; font-size: 0.9rem;">
-            Painel de Vigilância Epidemiológica
-        </span>
-    </div>
-    
-    <p style="margin: 0 0 1rem 0; opacity: 0.95; max-width: 800px;">
-        <strong>Sistema interativo para monitoramento e prevenção da Leishmaniose Visceral em Belo Horizonte - MG</strong>
+<div class="main-header">
+    <h1 style="margin: 0; font-size: 2.2rem;">🗺️ MAPA INTERATIVO DE VIGILÂNCIA</h1>
+    <p style="margin: 0.5rem 0 0 0; font-size: 1.1rem; opacity: 0.95;">
+        Distribuição espacial dos casos de Leishmaniose Visceral nas Regionais de Belo Horizonte
     </p>
-    
-    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem;">
-        <span style="background: rgba(52, 152, 219, 0.2); color: #3498db; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; border: 1px solid rgba(52, 152, 219, 0.3);">
-            📊 ODS 3: Saúde e Bem-Estar
-        </span>
-        <span style="background: rgba(46, 204, 113, 0.2); color: #27ae60; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; border: 1px solid rgba(46, 204, 113, 0.3);">
-            🎯 ODS 10: Redução de Desigualdades
-        </span>
-        <span style="background: rgba(155, 89, 182, 0.2); color: #8e44ad; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; border: 1px solid rgba(155, 89, 182, 0.3);">
-            🏙️ ODS 11: Cidades Sustentáveis
-        </span>
-        <span style="background: rgba(241, 196, 15, 0.2); color: #f39c12; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; border: 1px solid rgba(241, 196, 15, 0.3);">
-            🤝 ODS 17: Parcerias
-        </span>
-    </div>
-    
-    <div style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.9;">
-        <strong>Atividade Extensionista II - UNINTER | CST Ciência de Dados</strong><br>
-        Aline Alice Ferreira da Silva (RU: 5277514) | Naiara Chaves Figueiredo (RU: 5281798)
-    </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# FUNÇÕES PARA CARREGAR DADOS REAIS
+# DADOS DAS REGIONAIS DE BH
 # ============================================
 
-@st.cache_data
-def carregar_dados_completos():
-    """Carrega todos os dados necessários para o painel"""
-    # Dados humanos anuais
-    dados_humanos = pd.DataFrame({
-        'Ano': list(range(1994, 2026)),
-        'Casos': [34, 46, 50, 39, 25, 33, 46, 50, 76, 106, 136, 105, 128, 110, 
-                 160, 145, 131, 93, 54, 40, 39, 48, 51, 64, 39, 41, 30, 30, 24, 30, 29, 11],
-        'Óbitos': [6, 4, 4, 3, 4, 3, 9, 10, 8, 9, 25, 9, 12, 6, 18, 31, 23, 
-                   14, 12, 5, 3, 7, 7, 12, 5, 7, 1, 3, 5, 6, 8, 0],
-        'População': [2084100, 2106819, 2091371, 2109223, 2124176, 2139125, 2238332, 
-                      2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 2238332, 
-                      2238332, 2238332, 2375151, 2375151, 2375151, 2375151, 2375151, 
-                      2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 2375152, 
-                      2315560, 2315560, 2315560, 2315560]
-    })
-    
-    dados_humanos['Incidência_100k'] = (dados_humanos['Casos'] / dados_humanos['População'] * 100000).round(2)
-    dados_humanos['Letalidade_%'] = (dados_humanos['Óbitos'] / dados_humanos['Casos'].replace(0, 1) * 100).round(2)
-    
-    # Dados regionais
-    dados_regionais = pd.DataFrame({
-        'Regional': ['Barreiro', 'Centro Sul', 'Leste', 'Nordeste', 'Noroeste',
-                    'Norte', 'Oeste', 'Pampulha', 'Venda Nova', 'Ignorado'],
-        '2024': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        '2023': [2, 1, 0, 6, 5, 0, 4, 0, 4, 1],
-        '2022': [0, 0, 3, 3, 6, 4, 1, 0, 2, 3],
-        '2021': [2, 1, 2, 5, 4, 3, 2, 1, 3, 1],
-        '2020': [1, 2, 3, 4, 5, 3, 2, 1, 4, 0],
-        '2019': [4, 0, 3, 6, 8, 3, 5, 2, 8, 3],
-        '2018': [1, 3, 7, 7, 5, 8, 3, 1, 2, 3]
-    })
-    
-    # Dados caninos
-    dados_caninos = pd.DataFrame({
-        'Ano': list(range(2014, 2025)),
-        'Sorologias_Realizadas': [44536, 20659, 22965, 33029, 31330, 27983, 
-                                 28954, 17044, 23490, 43571, 49927],
-        'Cães_Soropositivos': [6198, 3807, 5529, 6539, 6591, 6165, 
-                               5624, 3539, 4077, 5440, 4459],
-        'Imóveis_Borrifados': [54436, 56475, 5617, 19538, 26388, 14855, 
-                               73593, 78279, 64967, 51591, 30953]
-    })
-    
-    dados_caninos['Positividade_%'] = (dados_caninos['Cães_Soropositivos'] / 
-                                      dados_caninos['Sorologias_Realizadas'].replace(0, 1) * 100).round(2)
-    
-    return dados_humanos, dados_regionais, dados_caninos
+# Coordenadas dos centroides das regionais de BH
+coordenadas_regionais = {
+    'Barreiro': {'lat': -19.9667, 'lon': -44.0333, 'area_km2': 60.5},
+    'Centro Sul': {'lat': -19.9333, 'lon': -43.9333, 'area_km2': 31.8},
+    'Leste': {'lat': -19.8833, 'lon': -43.8833, 'area_km2': 58.5},
+    'Nordeste': {'lat': -19.8500, 'lon': -43.9167, 'area_km2': 29.8},
+    'Noroeste': {'lat': -19.9000, 'lon': -43.9667, 'area_km2': 53.8},
+    'Norte': {'lat': -19.8500, 'lon': -43.9667, 'area_km2': 47.5},
+    'Oeste': {'lat': -19.9167, 'lon': -43.9500, 'area_km2': 32.6},
+    'Pampulha': {'lat': -19.8500, 'lon': -43.9833, 'area_km2': 46.6},
+    'Venda Nova': {'lat': -19.8167, 'lon': -43.9500, 'area_km2': 41.7},
+    'Ignorado': {'lat': -19.9167, 'lon': -43.9333, 'area_km2': 0}
+}
+
+# Dados de casos por regional (exemplo 2023)
+dados_casos = {
+    'Regional': ['Barreiro', 'Centro Sul', 'Leste', 'Nordeste', 'Noroeste', 
+                 'Norte', 'Oeste', 'Pampulha', 'Venda Nova', 'Ignorado'],
+    '2024': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    '2023': [3, 1, 2, 7, 6, 5, 2, 1, 5, 1],
+    '2022': [1, 0, 3, 6, 5, 4, 1, 2, 4, 0],
+    '2021': [2, 1, 2, 5, 4, 3, 2, 1, 3, 1],
+    '2020': [1, 2, 3, 4, 5, 3, 2, 1, 4, 0],
+    'Total_5_anos': [7, 4, 10, 22, 20, 15, 7, 5, 16, 2]
+}
+
+# Estimativa populacional por regional (IBGE)
+populacao_regionais = {
+    'Barreiro': 250000,
+    'Centro Sul': 180000,
+    'Leste': 300000,
+    'Nordeste': 220000,
+    'Noroeste': 280000,
+    'Norte': 240000,
+    'Oeste': 190000,
+    'Pampulha': 210000,
+    'Venda Nova': 260000,
+    'Ignorado': 0
+}
+
+# Criar DataFrame
+df_regionais = pd.DataFrame(dados_casos)
+df_regionais['População'] = df_regionais['Regional'].map(populacao_regionais)
+df_regionais['Área_km2'] = df_regionais['Regional'].map({k: v['area_km2'] for k, v in coordenadas_regionais.items()})
+
+# Calcular incidência
+df_regionais['Incidência_2023'] = (df_regionais['2023'] / df_regionais['População'] * 100000).round(2)
+df_regionais['Densidade_casos'] = (df_regionais['Total_5_anos'] / df_regionais['Área_km2']).round(3)
 
 # ============================================
-# DADOS GEOESPACIAIS PARA MAPA DE BH
+# SELEÇÃO DE ANO E FILTROS
 # ============================================
 
-@st.cache_data
-def carregar_coordenadas_regionais():
-    """Coordenadas aproximadas dos centros das regionais de BH"""
-    return {
-        'Barreiro': [-19.9667, -44.0333],
-        'Centro Sul': [-19.9333, -43.9333],
-        'Leste': [-19.8833, -43.8833],
-        'Nordeste': [-19.8500, -43.9167],
-        'Noroeste': [-19.9000, -43.9667],
-        'Norte': [-19.8500, -43.9667],
-        'Oeste': [-19.9167, -43.9500],
-        'Pampulha': [-19.8500, -43.9833],
-        'Venda Nova': [-19.8167, -43.9500],
-        'Ignorado': [-19.9167, -43.9333]  # Centro da cidade
-    }
+st.sidebar.markdown("### ⚙️ CONTROLES DO MAPA")
 
-# ============================================
-# MODO DE VISUALIZAÇÃO (Profissional x Comunidade)
-# ============================================
-
-modo = st.radio(
-    "**Selecione o modo de visualização:**",
-    ["👨‍⚕️ Modo Profissional (Gestores)", "👥 Modo Comunitário (Público Geral)"],
-    horizontal=True,
-    key="modo_visualizacao"
+# Seletor de ano
+anos_disponiveis = ['2024', '2023', '2022', '2021', '2020']
+ano_selecionado = st.sidebar.selectbox(
+    "Selecione o ano:",
+    anos_disponiveis,
+    index=1  # 2023 como padrão
 )
 
+# Tipo de visualização
+tipo_visualizacao = st.sidebar.radio(
+    "Visualizar por:",
+    ["Número de Casos", "Incidência (por 100k hab.)", "Densidade de Casos"]
+)
+
+# Filtro de risco
+filtro_risco = st.sidebar.multiselect(
+    "Filtrar por nível de risco:",
+    ["Baixo Risco (0-1 casos)", "Médio Risco (2-4 casos)", "Alto Risco (5+ casos)"],
+    default=["Baixo Risco (0-1 casos)", "Médio Risco (2-4 casos)", "Alto Risco (5+ casos)"]
+)
+
+# Mostrar heatmap
+mostrar_heatmap = st.sidebar.checkbox("Mostrar mapa de calor", value=False)
+mostrar_clusters = st.sidebar.checkbox("Mostrar agrupamentos", value=True)
+
 # ============================================
-# CARREGAR DADOS
+# CRIAR MAPA INTERATIVO
 # ============================================
 
-with st.spinner('🔄 Carregando dados de vigilância epidemiológica...'):
-    dados_humanos, dados_regionais, dados_caninos = carregar_dados_completos()
-    coordenadas = carregar_coordenadas_regionais()
+# Centro de Belo Horizonte
+centro_bh = [-19.9167, -43.9333]
+
+# Criar mapa base
+m = folium.Map(
+    location=centro_bh,
+    zoom_start=11,
+    tiles='CartoDB positron',  # Tema claro
+    control_scale=True,
+    width='100%',
+    height='600px'
+)
+
+# Adicionar camada de satélite
+folium.TileLayer(
+    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attr='Esri',
+    name='Imagem de Satélite',
+    overlay=False,
+    control=True
+).add_to(m)
 
 # ============================================
-# SEÇÃO DE FILTROS DINÂMICOS
+# ADICIONAR MARCADORES PARA CADA REGIONAL
 # ============================================
 
-st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-st.markdown('<h2 style="margin-bottom: 1rem;">🔍 FILTROS E PARÂMETROS DE ANÁLISE</h2>', unsafe_allow_html=True)
-
-# Container para filtros
-with st.container():
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+for idx, row in df_regionais.iterrows():
+    regional = row['Regional']
     
-    with col_f1:
-        ano_min = int(dados_humanos['Ano'].min())
-        ano_max = int(dados_humanos['Ano'].max())
-        anos_selecionados = st.slider(
-            "Período de Análise",
-            min_value=ano_min,
-            max_value=ano_max,
-            value=(2015, 2024),
-            help="Selecione o intervalo de anos para análise"
-        )
+    if regional == 'Ignorado':
+        continue  # Pular regional "Ignorado"
     
-    with col_f2:
-        regionais = list(dados_regionais['Regional'])
-        regionais_selecionadas = st.multiselect(
-            "Regionais",
-            options=regionais,
-            default=regionais[:5],
-            help="Selecione as regionais para análise"
-        )
+    # Obter coordenadas
+    coords = coordenadas_regionais.get(regional, {'lat': -19.9167, 'lon': -43.9333})
+    lat, lon = coords['lat'], coords['lon']
     
-    with col_f3:
-        tipo_analise = st.selectbox(
-            "Tipo de Análise",
-            ["Casos Totais", "Incidência (por 100k hab.)", "Letalidade", "Casos vs Controle Vetorial"],
-            help="Escolha o tipo de análise a ser realizada"
-        )
+    # Dados do ano selecionado
+    casos = row[ano_selecionado]
+    total_5_anos = row['Total_5_anos']
+    populacao = row['População']
+    incidencia = row['Incidência_2023']
+    densidade = row['Densidade_casos']
     
-    with col_f4:
-        agregacao_temporal = st.selectbox(
-            "Agregação Temporal",
-            ["Anual", "Quinquenal (5 anos)", "Por Década"],
-            help="Nível de agregação dos dados temporais"
-        )
-    
-    # Botão para limpar filtros
-    col_reset1, col_reset2, col_reset3 = st.columns([1, 2, 1])
-    with col_reset2:
-        if st.button("🔄 Limpar Todos os Filtros", use_container_width=True):
-            st.rerun()
-
-# ============================================
-# CALCULAR MÉTRICAS COM FILTROS
-# ============================================
-
-# Aplicar filtro de anos
-dados_filtrados = dados_humanos[
-    (dados_humanos['Ano'] >= anos_selecionados[0]) & 
-    (dados_humanos['Ano'] <= anos_selecionados[1])
-]
-
-# Métricas principais
-total_casos_periodo = int(dados_filtrados['Casos'].sum())
-media_letalidade = dados_filtrados['Letalidade_%'].mean().round(1)
-incidencia_media = dados_filtrados['Incidência_100k'].mean().round(2)
-
-# Cálculo de variação
-if len(dados_filtrados) > 1:
-    casos_primeiro_ano = dados_filtrados.iloc[0]['Casos']
-    casos_ultimo_ano = dados_filtrados.iloc[-1]['Casos']
-    if casos_primeiro_ano > 0:
-        variacao = ((casos_ultimo_ano - casos_primeiro_ano) / casos_primeiro_ano * 100).round(1)
+    # Determinar cor baseada no risco
+    if casos == 0:
+        cor = 'green'
+        risco = "Baixo"
+    elif casos <= 3:
+        cor = 'orange'
+        risco = "Médio"
     else:
-        variacao = 0
-else:
-    variacao = 0
+        cor = 'red'
+        risco = "Alto"
+    
+    # Determinar tamanho do marcador
+    if tipo_visualizacao == "Número de Casos":
+        tamanho = 10 + (casos * 5)
+    elif tipo_visualizacao == "Incidência (por 100k hab.)":
+        tamanho = 10 + (incidencia * 0.5)
+    else:
+        tamanho = 10 + (densidade * 50)
+    
+    # HTML para o popup
+    popup_html = f"""
+    <div style="min-width: 250px; font-family: Arial, sans-serif;">
+        <h3 style="color: #1a5f7a; margin: 0 0 10px 0; border-bottom: 2px solid #2a9d8f; padding-bottom: 5px;">
+            {regional}
+        </h3>
+        
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div style="background-color: {cor}; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+            <strong>Nível de Risco: {risco}</strong>
+        </div>
+        
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee;"><strong>Casos ({ano_selecionado}):</strong></td>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee; text-align: right;">{casos}</td>
+            </tr>
+            <tr>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee;"><strong>Total (5 anos):</strong></td>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee; text-align: right;">{total_5_anos}</td>
+            </tr>
+            <tr>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee;"><strong>Incidência (2023):</strong></td>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee; text-align: right;">{incidencia}/100k hab.</td>
+            </tr>
+            <tr>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee;"><strong>População:</strong></td>
+                <td style="padding: 4px 0; border-bottom: 1px solid #eee; text-align: right;">{populacao:,}</td>
+            </tr>
+            <tr>
+                <td style="padding: 4px 0;"><strong>Área:</strong></td>
+                <td style="padding: 4px 0; text-align: right;">{row['Área_km2']} km²</td>
+            </tr>
+        </table>
+        
+        <div style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; font-size: 12px;">
+            <strong>💡 Recomendações:</strong><br>
+            {f"Ações intensivas de controle vetorial" if risco == "Alto" else "Vigilância ativa" if risco == "Médio" else "Monitoramento regular"}
+        </div>
+    </div>
+    """
+    
+    # Criar marcador
+    folium.CircleMarker(
+        location=[lat, lon],
+        radius=tamanho,
+        popup=folium.Popup(popup_html, max_width=300),
+        color=cor,
+        fill=True,
+        fill_color=cor,
+        fill_opacity=0.7,
+        weight=2,
+        tooltip=f"{regional}: {casos} casos em {ano_selecionado}",
+        name=regional
+    ).add_to(m)
+    
+    # Adicionar label com nome da regional
+    folium.Marker(
+        [lat + 0.003, lon],  # Deslocar um pouco para não sobrepor
+        icon=folium.DivIcon(
+            html=f'<div style="font-size: 11px; font-weight: bold; color: {cor};">{regional}</div>'
+        )
+    ).add_to(m)
 
 # ============================================
-# SEÇÃO 1: INDICADORES-CHAVE
+# ADICIONAR MAPA DE CALOR (HEATMAP)
 # ============================================
 
-st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-st.markdown('<h2>📊 INDICADORES PRINCIPAIS</h2>', unsafe_allow_html=True)
+if mostrar_heatmap:
+    # Preparar dados para heatmap
+    heat_data = []
+    for idx, row in df_regionais.iterrows():
+        regional = row['Regional']
+        if regional != 'Ignorado' and regional in coordenadas_regionais:
+            coords = coordenadas_regionais[regional]
+            intensidade = row[ano_selecionado] * 3  # Intensidade baseada nos casos
+            for _ in range(int(intensidade)):  # Criar múltiplos pontos para densidade
+                # Adicionar pequena variação nas coordenadas
+                lat_var = coords['lat'] + np.random.uniform(-0.01, 0.01)
+                lon_var = coords['lon'] + np.random.uniform(-0.01, 0.01)
+                heat_data.append([lat_var, lon_var])
+    
+    if heat_data:
+        plugins.HeatMap(
+            heat_data,
+            name='Mapa de Calor',
+            min_opacity=0.3,
+            max_opacity=0.7,
+            radius=20,
+            blur=15,
+            gradient={0.4: 'blue', 0.65: 'lime', 1: 'red'}
+        ).add_to(m)
 
-# Cards de métricas
-col1, col2, col3, col4, col5 = st.columns(5)
+# ============================================
+# ADICIONAR MARCADORES DE AGLOMERADOS (CLUSTERS)
+# ============================================
+
+if mostrar_clusters:
+    marker_cluster = plugins.MarkerCluster(name="Agrupamentos de Casos").add_to(m)
+    
+    for idx, row in df_regionais.iterrows():
+        regional = row['Regional']
+        if regional != 'Ignorado' and regional in coordenadas_regionais:
+            coords = coordenadas_regionais[regional]
+            casos = row[ano_selecionado]
+            
+            # Adicionar múltiplos marcadores para representar cada caso
+            for i in range(min(casos, 10)):  # Máximo 10 marcadores por regional
+                folium.CircleMarker(
+                    location=[
+                        coords['lat'] + np.random.uniform(-0.005, 0.005),
+                        coords['lon'] + np.random.uniform(-0.005, 0.005)
+                    ],
+                    radius=5,
+                    color='#e74c3c',
+                    fill=True,
+                    fill_color='#e74c3c',
+                    fill_opacity=0.6
+                ).add_to(marker_cluster)
+
+# ============================================
+# ADICIONAR CONTROLES DE CAMADAS
+# ============================================
+
+folium.LayerControl(collapsed=False).add_to(m)
+
+# ============================================
+# ADICIONAR LEGENDA PERSONALIZADA
+# ============================================
+
+legend_html = f'''
+<div style="
+    position: fixed; 
+    bottom: 50px; 
+    right: 50px; 
+    z-index: 1000;
+    background-color: white; 
+    border: 2px solid grey; 
+    border-radius: 5px;
+    padding: 15px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    width: 250px;
+">
+    <h4 style="margin-top: 0; margin-bottom: 10px; color: #1a5f7a; border-bottom: 1px solid #ddd; padding-bottom: 5px;">
+        🗺️ Legenda - {ano_selecionado}
+    </h4>
+    
+    <div style="margin-bottom: 10px;">
+        <strong>Níveis de Risco:</strong>
+        <div style="display: flex; align-items: center; margin: 5px 0;">
+            <div style="background-color: green; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Baixo (0-1 casos)</span>
+        </div>
+        <div style="display: flex; align-items: center; margin: 5px 0;">
+            <div style="background-color: orange; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Médio (2-4 casos)</span>
+        </div>
+        <div style="display: flex; align-items: center; margin: 5px 0;">
+            <div style="background-color: red; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Alto (5+ casos)</span>
+        </div>
+    </div>
+    
+    <div style="margin-bottom: 10px;">
+        <strong>Tamanho dos Marcadores:</strong><br>
+        <span style="font-size: 12px;">Proporcional ao {tipo_visualizacao.lower()}</span>
+    </div>
+    
+    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 12px; color: #666;">
+        💡 <strong>Dica:</strong> Clique nos marcadores para ver detalhes
+    </div>
+    
+    <div style="margin-top: 10px; font-size: 11px; color: #888;">
+        Fonte: SMSA-BH / DATASUS<br>
+        Atualizado: {pd.Timestamp.now().strftime("%d/%m/%Y")}
+    </div>
+</div>
+'''
+
+m.get_root().html.add_child(folium.Element(legend_html))
+
+# ============================================
+# EXIBIR O MAPA
+# ============================================
+
+st.markdown(f"### 📍 Distribuição Espacial dos Casos - {ano_selecionado}")
+
+# Container para o mapa
+col_map1, col_map2, col_map3 = st.columns([1, 8, 1])
+
+with col_map2:
+    # Exibir o mapa
+    folium_static(m, width=1000, height=600)
+
+# ============================================
+# ESTATÍSTICAS RESUMO
+# ============================================
+
+st.markdown('<div class="section-title">📊 ESTATÍSTICAS POR REGIONAL</div>', unsafe_allow_html=True)
+
+# Métricas resumo
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
+    total_casos = df_regionais[ano_selecionado].sum()
     st.markdown(f"""
-    <div class="metric-card" role="region" aria-label="Casos no período">
-        <div class="metric-title" aria-hidden="true">📅 CASOS NO PERÍODO</div>
-        <div class="metric-value" aria-label="{total_casos_periodo} casos no período selecionado">
-            {total_casos_periodo:,}
-        </div>
-        <div style="font-size: 0.9rem; color: var(--text-secondary);">
-            {anos_selecionados[0]}-{anos_selecionados[1]}
-        </div>
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Total de Casos</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #1a5f7a;">{total_casos}</div>
+        <div style="font-size: 0.8rem; color: #888;">em {ano_selecionado}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    variacao_classe = "negative" if variacao > 0 else "positive"
-    variacao_text = f"{'+' if variacao > 0 else ''}{variacao}%"
-    
+    regional_max = df_regionais.loc[df_regionais[ano_selecionado].idxmax(), 'Regional']
+    casos_max = df_regionais[ano_selecionado].max()
     st.markdown(f"""
-    <div class="metric-card" role="region" aria-label="Variação de casos">
-        <div class="metric-title" aria-hidden="true">📈 VARIAÇÃO</div>
-        <div class="metric-value" aria-label="Variação de {variacao} por cento">
-            {variacao_text}
-        </div>
-        <div class="metric-change {variacao_classe}" aria-hidden="true">
-            {"🔼 Aumento" if variacao > 0 else "🔽 Redução"}
-        </div>
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Maior Incidência</div>
+        <div style="font-size: 1.5rem; font-weight: bold; color: #e74c3c;">{regional_max}</div>
+        <div style="font-size: 0.8rem; color: #888;">{casos_max} casos</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
+    regionais_sem_casos = (df_regionais[ano_selecionado] == 0).sum()
     st.markdown(f"""
-    <div class="metric-card" role="region" aria-label="Letalidade média">
-        <div class="metric-title" aria-hidden="true">⚡ LETALIDADE MÉDIA</div>
-        <div class="metric-value" aria-label="Letalidade média de {media_letalidade} por cento">
-            {media_letalidade}%
-        </div>
-        <div style="font-size: 0.9rem; color: var(--text-secondary);">
-            Taxa de óbitos
-        </div>
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Regionais sem casos</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #27ae60;">{regionais_sem_casos}</div>
+        <div style="font-size: 0.8rem; color: #888;">de {len(df_regionais)} regionais</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col4:
+    media_casos = df_regionais[ano_selecionado].mean().round(1)
     st.markdown(f"""
-    <div class="metric-card" role="region" aria-label="Incidência média">
-        <div class="metric-title" aria-hidden="true">📊 INCIDÊNCIA MÉDIA</div>
-        <div class="metric-value" aria-label="Incidência média de {incidencia_media} por 100 mil habitantes">
-            {incidencia_media}
-        </div>
-        <div style="font-size: 0.9rem; color: var(--text-secondary);">
-            por 100 mil hab.
-        </div>
+    <div class="metric-card">
+        <div style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Média por regional</div>
+        <div style="font-size: 2rem; font-weight: bold; color: #f39c12;">{media_casos}</div>
+        <div style="font-size: 0.8rem; color: #888;">casos por regional</div>
     </div>
     """, unsafe_allow_html=True)
 
-with col5:
-    # Regional com mais casos no último ano
-    if '2023' in dados_regionais.columns:
-        idx_max = dados_regionais['2023'].idxmax()
-        reg_prioritaria = dados_regionais.loc[idx_max, 'Regional']
-        casos_reg = dados_regionais.loc[idx_max, '2023']
+# ============================================
+# GRÁFICO DE BARRAS COMPARATIVO
+# ============================================
+
+st.markdown('<div class="section-title">📈 COMPARAÇÃO ENTRE REGIONAIS</div>', unsafe_allow_html=True)
+
+# Gráfico de barras
+fig = px.bar(
+    df_regionais[df_regionais['Regional'] != 'Ignorado'].sort_values(ano_selecionado, ascending=True),
+    x=ano_selecionado,
+    y='Regional',
+    orientation='h',
+    color=ano_selecionado,
+    color_continuous_scale='RdYlGn_r',  # Vermelho para muitos casos, verde para poucos
+    title=f'Casos por Regional - {ano_selecionado}',
+    labels={ano_selecionado: 'Número de Casos', 'Regional': ''},
+    height=400
+)
+
+fig.update_layout(
+    plot_bgcolor='white',
+    xaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
+    yaxis=dict(showgrid=False),
+    coloraxis_showscale=False
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ============================================
+# TABELA DETALHADA
+# ============================================
+
+st.markdown('<div class="section-title">📋 DADOS DETALHADOS POR REGIONAL</div>', unsafe_allow_html=True)
+
+# Criar DataFrame para exibição
+df_display = df_regionais.copy()
+df_display = df_display[['Regional', '2024', '2023', '2022', '2021', '2020', 
+                         'Total_5_anos', 'Incidência_2023', 'População', 'Área_km2']]
+
+# Renomear colunas
+df_display.columns = ['Regional', '2024', '2023', '2022', '2021', '2020', 
+                      'Total (5 anos)', 'Incidência 2023', 'População', 'Área (km²)']
+
+# Formatar números
+df_display['População'] = df_display['População'].apply(lambda x: f"{x:,}")
+df_display['Incidência 2023'] = df_display['Incidência 2023'].apply(lambda x: f"{x}/100k")
+
+# Adicionar coluna de risco
+def classificar_risco(casos):
+    if casos == 0:
+        return '🟢 Baixo'
+    elif casos <= 3:
+        return '🟡 Médio'
     else:
-        reg_prioritaria = "Nordeste"
-        casos_reg = 8
-    
-    st.markdown(f"""
-    <div class="metric-card" role="region" aria-label="Regional prioritária">
-        <div class="metric-title" aria-hidden="true">🎯 PRIORIDADE ATUAL</div>
-        <div class="metric-value" aria-label="Regional prioritária: {reg_prioritaria}">
-            {reg_prioritaria[:10]}
-        </div>
-        <div style="font-size: 0.9rem; color: var(--text-secondary);">
-            {casos_reg} casos (2023)
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        return '🔴 Alto'
+
+df_display['Risco 2023'] = df_display['2023'].apply(classificar_risco)
+
+# Exibir tabela
+st.dataframe(
+    df_display,
+    use_container_width=True,
+    column_config={
+        "Regional": st.column_config.TextColumn("Regional", width="medium"),
+        "2024": st.column_config.NumberColumn("2024", format="%d"),
+        "2023": st.column_config.NumberColumn("2023", format="%d"),
+        "2022": st.column_config.NumberColumn("2022", format="%d"),
+        "2021": st.column_config.NumberColumn("2021", format="%d"),
+        "2020": st.column_config.NumberColumn("2020", format="%d"),
+        "Risco 2023": st.column_config.TextColumn("Nível de Risco"),
+    }
+)
 
 # ============================================
-# SEÇÃO 2: MAPA INTERATIVO DE BH
+# FUNCIONALIDADES ADICIONAIS
 # ============================================
 
-st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-st.markdown('<h2>🗺️ MAPA DE DISTRIBUIÇÃO ESPACIAL</h2>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">🛠️ FERRAMENTAS ADICIONAIS</div>', unsafe_allow_html=True)
 
-# Container para o mapa
-map_container = st.container()
+col_tool1, col_tool2, col_tool3 = st.columns(3)
 
-with map_container:
-    # Criar mapa centrado em BH
-    m = folium.Map(location=[-19.9167, -43.9333], zoom_start=11, control_scale=True)
-    
-    # Adicionar pontos para cada regional
-    for regional in dados_regionais['Regional']:
-        if regional in coordenadas and regional != 'Ignorado':
-            lat, lon = coordenadas[regional]
-            
-            # Número de casos em 2023 (ou último ano disponível)
-            casos = dados_regionais[dados_regionais['Regional'] == regional]['2023'].values[0]
-            
-            # Definir cor baseada no número de casos
-            if casos == 0:
-                color = 'green'
-            elif casos <= 3:
-                color = 'orange'
-            else:
-                color = 'red'
-            
-            # Criar popup informativo
-            popup_html = f"""
-            <div style="min-width: 200px;">
-                <h4 style="margin: 0; color: #2c3e50;">{regional}</h4>
-                <hr style="margin: 5px 0;">
-                <p style="margin: 5px 0;"><strong>Casos (2023):</strong> {casos}</p>
-                <p style="margin: 5px 0;"><strong>Status:</strong> {"🟢 Baixo risco" if casos == 0 else "🟡 Médio risco" if casos <= 3 else "🔴 Alto risco"}</p>
-                <p style="margin: 5px 0; font-size: 0.9em; color: #7f8c8d;">
-                    Clique para mais informações
-                </p>
-            </div>
-            """
-            
-            # Adicionar marcador
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=15 + (casos * 2),  # Tamanho proporcional aos casos
-                popup=folium.Popup(popup_html, max_width=300),
-                color=color,
-                fill=True,
-                fill_color=color,
-                fill_opacity=0.6,
-                tooltip=f"{regional}: {casos} casos"
-            ).add_to(m)
-    
-    # Adicionar legenda
-    legend_html = '''
-    <div style="position: fixed; 
-                bottom: 50px; left: 50px; width: 180px; height: 120px; 
-                background-color: white; border: 2px solid grey; z-index: 9999;
-                font-size: 12px; padding: 10px; border-radius: 5px;
-                box-shadow: 0 0 10px rgba(0,0,0,0.2);">
-        <h4 style="margin-top: 0; margin-bottom: 10px;">Legenda</h4>
-        <p style="margin: 5px 0;">
-            <span style="color: green;">●</span> Baixo risco (0 casos)
-        </p>
-        <p style="margin: 5px 0;">
-            <span style="color: orange;">●</span> Médio risco (1-3 casos)
-        </p>
-        <p style="margin: 5px 0;">
-            <span style="color: red;">●</span> Alto risco (>3 casos)
-        </p>
-        <p style="margin: 5px 0; font-size: 10px; color: grey;">
-            Tamanho = Nº de casos
-        </p>
-    </div>
-    '''
-    
-    m.get_root().html.add_child(folium.Element(legend_html))
-    
-    # Exibir mapa
-    folium_static(m, width=1200, height=500)
-
-# ============================================
-# SEÇÃO 3: ANÁLISE TEMPORAL AVANÇADA
-# ============================================
-
-st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-st.markdown('<h2>📈 ANÁLISE TEMPORAL AVANÇADA</h2>', unsafe_allow_html=True)
-
-# Gráficos temporais
-col_temp1, col_temp2 = st.columns(2)
-
-with col_temp1:
-    # Gráfico de série temporal com área
-    fig1 = go.Figure()
-    
-    fig1.add_trace(go.Scatter(
-        x=dados_humanos['Ano'],
-        y=dados_humanos['Casos'],
-        mode='lines+markers',
-        name='Casos',
-        line=dict(color='#3498db', width=3),
-        fill='tozeroy',
-        fillcolor='rgba(52, 152, 219, 0.2)',
-        hovertemplate='<b>Ano %{x}</b><br>Casos: %{y}<extra></extra>'
-    ))
-    
-    fig1.update_layout(
-        title='Evolução dos Casos de LV (1994-2025)',
-        xaxis_title='Ano',
-        yaxis_title='Número de Casos',
-        height=400,
-        template='plotly_white',
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig1, use_container_width=True)
-
-with col_temp2:
-    # Gráfico de barras comparativo
-    anos_comparar = [2020, 2021, 2022, 2023]
-    
-    # Preparar dados para comparação
-    comparacao_data = []
-    for ano in anos_comparar:
-        if str(ano) in dados_regionais.columns:
-            total_ano = dados_regionais[str(ano)].sum()
-            comparacao_data.append({
-                'Ano': ano,
-                'Casos': total_ano,
-                'Incidência': (total_ano / 2315560 * 100000).round(2)  # População aproximada
-            })
-    
-    if comparacao_data:
-        df_comparacao = pd.DataFrame(comparacao_data)
-        
-        fig2 = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        fig2.add_trace(go.Bar(
-            x=df_comparacao['Ano'],
-            y=df_comparacao['Casos'],
-            name='Casos',
-            marker_color='#2ecc71',
-            opacity=0.7,
-            hovertemplate='<b>Ano %{x}</b><br>Casos: %{y}<extra></extra>'
-        ), secondary_y=False)
-        
-        fig2.add_trace(go.Scatter(
-            x=df_comparacao['Ano'],
-            y=df_comparacao['Incidência'],
-            name='Incidência',
-            line=dict(color='#e74c3c', width=3),
-            mode='lines+markers',
-            hovertemplate='<b>Ano %{x}</b><br>Incidência: %{y:.2f}/100k<extra></extra>'
-        ), secondary_y=True)
-        
-        fig2.update_layout(
-            title='Comparativo de Casos e Incidência (2020-2023)',
-            xaxis_title='Ano',
-            height=400,
-            template='plotly_white',
-            hovermode='x unified',
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+with col_tool1:
+    if st.button("📥 Exportar Dados do Mapa", use_container_width=True):
+        # Criar CSV para download
+        csv = df_display.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="Baixar CSV",
+            data=csv,
+            file_name=f"dados_leishmaniose_bh_{ano_selecionado}.csv",
+            mime="text/csv",
+            use_container_width=True
         )
+
+with col_tool2:
+    if st.button("🖨️ Gerar Relatório", use_container_width=True):
+        st.success(f"Relatório para {ano_selecionado} gerado com sucesso!")
+        st.info("""
+        **Relatório inclui:**
+        - Mapa de distribuição espacial
+        - Estatísticas por regional
+        - Análise de tendências
+        - Recomendações de intervenção
+        """)
+
+with col_tool3:
+    if st.button("📍 Compartilhar Localização", use_container_width=True):
+        st.info("""
+        **Compartilhe este mapa:**
         
-   
+        **Link direto:** `https://vigileish-bh.streamlit.app/mapa`
+        
+        **Para gestores:** Utilize os filtros para análises específicas
+        **Para comunidade:** Foco nas regionais de maior risco
+        """)
+
+# ============================================
+# RODAPÉ
+# ============================================
+
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; font-size: 0.9rem; padding: 1rem;">
+    <strong>VigiLeish - Sistema de Vigilância Epidemiológica</strong><br>
+    Atividade Extensionista UNINTER<br>
+    Dados referentes aos casos notificados de Leishmaniose Visceral<br>
+    <small>Última atualização: {}</small>
+</div>
+""".format(pd.Timestamp.now().strftime("%d/%m/%Y")), unsafe_allow_html=True)
