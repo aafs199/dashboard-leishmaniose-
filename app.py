@@ -133,29 +133,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     
-    /* BOTÕES MODERNOS */
-    .stButton button {
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-    
-    /* ABAS ELEGANTES */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0 0;
-        padding: 0.75rem 1.5rem;
-        font-weight: 500;
-    }
-    
     /* FOOTER PROFISSIONAL */
     .footer {
         background: var(--dark);
@@ -192,12 +169,6 @@ st.markdown("""
     .badge-success { background: rgba(40, 167, 69, 0.1); color: var(--success); }
     .badge-warning { background: rgba(255, 193, 7, 0.1); color: #856404; }
     .badge-danger { background: rgba(220, 53, 69, 0.1); color: var(--danger); }
-    
-    /* RESPONSIVO */
-    @media (max-width: 768px) {
-        .metric-value { font-size: 1.8rem; }
-        .main-header { padding: 1rem; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -205,7 +176,7 @@ st.markdown("""
 # CABEÇALHO PROFISSIONAL
 # ============================================
 
-st.markdown("""
+st.markdown(f"""
 <div class="main-header">
     <div class="logo-container">
         <h1 class="logo-text">🏥 SISTEMA DE MONITORAMENTO</h1>
@@ -213,14 +184,14 @@ st.markdown("""
     <p class="subtitle">LEISHMANIOSE VISCERAL • SECRETARIA MUNICIPAL DE SAÚDE DE BELO HORIZONTE</p>
     <div style="display: flex; gap: 1rem; margin-top: 1rem; font-size: 0.9rem;">
         <span class="badge badge-primary">Dados Oficiais</span>
-        <span class="badge badge-success">Atualizado: """ + datetime.now().strftime("%d/%m/%Y") + """</span>
+        <span class="badge badge-success">Atualizado: {datetime.now().strftime('%d/%m/%Y')}</span>
         <span class="badge badge-warning">Monitoramento Ativo</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# DADOS DE EXEMPLO (MESMO DO ANTERIOR)
+# DADOS DE EXEMPLO
 # ============================================
 
 @st.cache_data
@@ -276,20 +247,36 @@ dados_regionais = carregar_dados_regionais()
 dados_caninos = carregar_dados_caninos()
 
 # ============================================
-# SEÇÃO 1: INDICADORES-CHAVE (KPI CARDS)
+# CÁLCULO SEGURO DAS MÉTRICAS
 # ============================================
 
-st.markdown('<div class="section-header">📊 VISÃO GERAL DO MONITORAMENTO</div>', unsafe_allow_html=True)
-
-# Calcular métricas
 ultimo_ano = dados_humanos['Ano'].max()
 casos_ultimo_ano = int(dados_humanos[dados_humanos['Ano'] == ultimo_ano]['Casos'].values[0])
-casos_ano_anterior = int(dados_humanos[dados_humanos['Ano'] == ultimo_ano-1]['Casos'].values[0])
-variacao_casos = ((casos_ultimo_ano - casos_ano_anterior) / casos_ano_anterior * 100).round(1)
+
+# Cálculo SEGURO da variação (evita divisão por zero)
+try:
+    if (ultimo_ano - 1) in dados_humanos['Ano'].values:
+        casos_ano_anterior = int(dados_humanos[dados_humanos['Ano'] == ultimo_ano-1]['Casos'].values[0])
+        if casos_ano_anterior > 0:
+            variacao_casos = ((casos_ultimo_ano - casos_ano_anterior) / casos_ano_anterior * 100).round(1)
+        else:
+            variacao_casos = 100.0 if casos_ultimo_ano > 0 else 0.0
+    else:
+        casos_ano_anterior = 0
+        variacao_casos = 0.0
+except:
+    casos_ano_anterior = 0
+    variacao_casos = 0.0
 
 letalidade_media = dados_humanos['Letalidade_%'].tail(5).mean().round(1)
 total_casos = int(dados_humanos['Casos'].sum())
 incidencia_atual = dados_humanos['Incidência_100k'].iloc[-1]
+
+# ============================================
+# SEÇÃO 1: INDICADORES-CHAVE (KPI CARDS)
+# ============================================
+
+st.markdown('<div class="section-header">📊 VISÃO GERAL DO MONITORAMENTO</div>', unsafe_allow_html=True)
 
 # Criar colunas para os cards
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -334,8 +321,12 @@ with col4:
     """, unsafe_allow_html=True)
 
 with col5:
-    reg_mais_casos = dados_regionais.loc[dados_regionais['2024'].idxmax(), 'Regional']
-    casos_reg = dados_regionais['2024'].max()
+    try:
+        reg_mais_casos = dados_regionais.loc[dados_regionais['2024'].idxmax(), 'Regional']
+        casos_reg = dados_regionais['2024'].max()
+    except:
+        reg_mais_casos = "N/A"
+        casos_reg = 0
     
     st.markdown(f"""
     <div class="metric-card">
@@ -364,7 +355,7 @@ with col_chart1:
         y=dados_humanos['Casos'],
         mode='lines',
         name='Casos',
-        line=dict(color='var(--primary)', width=4),
+        line=dict(color='#0056a6', width=4),
         fill='tozeroy',
         fillcolor='rgba(0, 86, 166, 0.1)',
         hovertemplate='<b>Ano %{x}</b><br>%{y} casos<extra></extra>'
@@ -378,7 +369,7 @@ with col_chart1:
         y=dados_humanos['MM5'],
         mode='lines',
         name='Média Móvel (5 anos)',
-        line=dict(color='var(--accent)', width=3, dash='dash'),
+        line=dict(color='#ff6b35', width=3, dash='dash'),
         hovertemplate='<b>Ano %{x}</b><br>Média: %{y:.0f} casos<extra></extra>'
     ))
     
@@ -389,14 +380,7 @@ with col_chart1:
         height=400,
         template='plotly_white',
         plot_bgcolor='white',
-        hovermode='x unified',
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor='rgba(255, 255, 255, 0.8)'
-        )
+        hovermode='x unified'
     )
     
     st.plotly_chart(fig1, use_container_width=True)
@@ -413,7 +397,7 @@ with col_chart2:
         y=dados_humanos['Letalidade_%'],
         mode='lines+markers',
         name='Letalidade',
-        line=dict(color='var(--danger)', width=3),
+        line=dict(color='#dc3545', width=3),
         marker=dict(size=6),
         fill='tozeroy',
         fillcolor='rgba(220, 53, 69, 0.1)',
@@ -435,8 +419,7 @@ with col_chart2:
         y=letalidade_media,
         line_dash="dash",
         line_color="gray",
-        annotation_text=f"Média: {letalidade_media}%",
-        annotation_position="bottom right"
+        annotation_text=f"Média: {letalidade_media}%"
     )
     
     st.plotly_chart(fig2, use_container_width=True)
@@ -461,22 +444,17 @@ st.markdown('<div class="chart-container">', unsafe_allow_html=True)
 df_regional = dados_regionais[['Regional', ano_selecionado]].copy()
 df_regional = df_regional.sort_values(ano_selecionado, ascending=True)
 
-# Gráfico de barras horizontal profissional
+# Gráfico de barras horizontal
 fig3 = go.Figure()
-
-# Cores gradiente baseadas nos valores
-max_val = df_regional[ano_selecionado].max()
-cores = [f'rgba(0, 86, 166, {0.3 + 0.7*(val/max_val)})' for val in df_regional[ano_selecionado]]
 
 fig3.add_trace(go.Bar(
     y=df_regional['Regional'],
     x=df_regional[ano_selecionado],
     orientation='h',
-    marker_color=cores,
+    marker_color='#00a79d',
     hovertemplate='<b>%{y}</b><br>%{x} casos<extra></extra>',
     text=df_regional[ano_selecionado],
-    textposition='outside',
-    textfont=dict(size=12, color='var(--dark)')
+    textposition='outside'
 ))
 
 fig3.update_layout(
@@ -486,20 +464,7 @@ fig3.update_layout(
     height=500,
     template='plotly_white',
     plot_bgcolor='white',
-    showlegend=False,
-    margin=dict(l=0, r=0, t=50, b=0)
-)
-
-# Destacar o maior valor
-fig3.add_annotation(
-    x=df_regional[ano_selecionado].max() * 1.05,
-    y=df_regional['Regional'].iloc[-1],
-    text="Maior incidência",
-    showarrow=True,
-    arrowhead=1,
-    ax=50,
-    ay=0,
-    font=dict(color='var(--accent)', size=12)
+    showlegend=False
 )
 
 st.plotly_chart(fig3, use_container_width=True)
@@ -523,7 +488,7 @@ with col_can1:
         x=dados_caninos['Ano'],
         y=dados_caninos['Cães_Soropositivos'],
         name='Cães Soropositivos',
-        marker_color='var(--secondary)',
+        marker_color='#00a79d',
         hovertemplate='<b>Ano %{x}</b><br>%{y} cães<extra></extra>'
     ))
     
@@ -532,7 +497,7 @@ with col_can1:
         y=dados_caninos['Positividade_%'],
         name='Taxa de Positividade',
         yaxis='y2',
-        line=dict(color='var(--accent)', width=3),
+        line=dict(color='#ff6b35', width=3),
         hovertemplate='<b>Ano %{x}</b><br>%{y:.1f}%<extra></extra>'
     ))
     
@@ -548,13 +513,7 @@ with col_can1:
         height=400,
         template='plotly_white',
         plot_bgcolor='white',
-        hovermode='x unified',
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=0.99
-        )
+        hovermode='x unified'
     )
     
     st.plotly_chart(fig4, use_container_width=True)
@@ -571,7 +530,7 @@ with col_can2:
         y=dados_caninos['Imóveis_Borrifados'],
         mode='lines+markers',
         name='Imóveis Borrifados',
-        line=dict(color='var(--primary)', width=3),
+        line=dict(color='#0056a6', width=3),
         fill='tozeroy',
         fillcolor='rgba(0, 86, 166, 0.1)',
         hovertemplate='<b>Ano %{x}</b><br>%{y:,} imóveis<extra></extra>'
@@ -596,7 +555,7 @@ with col_can2:
 
 st.markdown('<div class="section-header">📋 BASE DE DADOS COMPLETA</div>', unsafe_allow_html=True)
 
-# Tabs elegantes
+# Tabs
 tab1, tab2, tab3 = st.tabs([
     f"👥 Dados Humanos ({len(dados_humanos)} anos)",
     f"🗺️ Dados Regionais ({len(dados_regionais)} regionais)", 
@@ -608,104 +567,56 @@ with tab1:
         dados_humanos,
         use_container_width=True,
         column_config={
-            "Ano": st.column_config.NumberColumn(format="%d", width="small"),
-            "Casos": st.column_config.NumberColumn(format="%d", width="small"),
-            "Óbitos": st.column_config.NumberColumn(format="%d", width="small"),
-            "Incidência_100k": st.column_config.NumberColumn(format="%.2f", width="small"),
-            "Letalidade_%": st.column_config.NumberColumn(format="%.1f%%", width="small")
-        },
-        hide_index=True
+            "Ano": st.column_config.NumberColumn(format="%d"),
+            "Casos": st.column_config.NumberColumn(format="%d"),
+            "Óbitos": st.column_config.NumberColumn(format="%d"),
+            "Incidência_100k": st.column_config.NumberColumn(format="%.2f"),
+            "Letalidade_%": st.column_config.NumberColumn(format="%.1f%%")
+        }
     )
     
-    col_dl1, col_dl2, col_dl3 = st.columns(3)
-    with col_dl2:
-        csv_humanos = dados_humanos.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Exportar Dados (CSV)",
-            data=csv_humanos,
-            file_name="dados_humanos_lv_bh.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    csv_humanos = dados_humanos.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Exportar Dados (CSV)",
+        data=csv_humanos,
+        file_name="dados_humanos_lv_bh.csv",
+        mime="text/csv"
+    )
 
 with tab2:
-    st.dataframe(dados_regionais, use_container_width=True, hide_index=True)
+    st.dataframe(dados_regionais, use_container_width=True)
     
     csv_regionais = dados_regionais.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Exportar Dados Regionais (CSV)",
         data=csv_regionais,
         file_name="dados_regionais_lv_bh.csv",
-        mime="text/csv",
-        use_container_width=True
+        mime="text/csv"
     )
 
 with tab3:
-    st.dataframe(dados_caninos, use_container_width=True, hide_index=True)
+    st.dataframe(dados_caninos, use_container_width=True)
     
     csv_caninos = dados_caninos.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Exportar Dados Caninos (CSV)",
         data=csv_caninos,
         file_name="dados_caninos_lv_bh.csv",
-        mime="text/csv",
-        use_container_width=True
+        mime="text/csv"
     )
 
 # ============================================
 # RODAPÉ PROFISSIONAL
 # ============================================
 
-st.markdown("""
+st.markdown(f"""
 <div class="footer">
     <div class="footer-logo">SECRETARIA MUNICIPAL DE SAÚDE DE BELO HORIZONTE</div>
     <div class="footer-text">
         Sistema de Monitoramento da Leishmaniose Visceral | Versão 2.0<br>
         Gerência de Vigilância Epidemiológica | Coordenação de Zoonoses<br>
-        Dados oficiais para gestão em saúde pública | Atualizado em """ + datetime.now().strftime("%d/%m/%Y") + """<br>
+        Dados oficiais para gestão em saúde pública | Atualizado em {datetime.now().strftime('%d/%m/%Y')}<br>
         <small>© 2025 Prefeitura de Belo Horizonte. Todos os direitos reservados.</small>
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ============================================
-# BARRA LATERAL (MENU)
-# ============================================
-
-with st.sidebar:
-    st.markdown("""
-    <div style="padding: 1rem; background: white; border-radius: 10px; margin-bottom: 1rem;">
-        <h3 style="color: var(--primary); margin-bottom: 1rem;">🔍 MENU DE NAVEGAÇÃO</h3>
-        <ul style="list-style: none; padding: 0;">
-            <li style="margin-bottom: 0.5rem;">📊 <a href="#" style="color: var(--dark); text-decoration: none;">Visão Geral</a></li>
-            <li style="margin-bottom: 0.5rem;">📈 <a href="#" style="color: var(--dark); text-decoration: none;">Análise Temporal</a></li>
-            <li style="margin-bottom: 0.5rem;">🗺️ <a href="#" style="color: var(--dark); text-decoration: none;">Distribuição Geográfica</a></li>
-            <li style="margin-bottom: 0.5rem;">🐕 <a href="#" style="color: var(--dark); text-decoration: none;">Vigilância Canina</a></li>
-            <li style="margin-bottom: 0.5rem;">📋 <a href="#" style="color: var(--dark); text-decoration: none;">Base de Dados</a></li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div style="padding: 1rem; background: var(--light); border-radius: 10px; margin-bottom: 1rem;">
-        <h4 style="color: var(--dark); margin-bottom: 0.5rem;">ℹ️ SOBRE OS DADOS</h4>
-        <p style="font-size: 0.85rem; color: var(--gray);">
-        • Período: 1994-2025<br>
-        • Fonte: Sistemas de informação da SMSA-BH<br>
-        • Atualização: Trimestral<br>
-        • Confidencialidade: Dados agregados
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div style="padding: 1rem; background: rgba(0, 86, 166, 0.05); border-radius: 10px;">
-        <h4 style="color: var(--primary); margin-bottom: 0.5rem;">📞 CONTATO</h4>
-        <p style="font-size: 0.85rem; color: var(--gray);">
-        Gerência de Zoonoses<br>
-        Secretaria Municipal de Saúde<br>
-        Tel: (31) 3277-XXXX<br>
-        E-mail: zoonoses@pbh.gov.br
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
