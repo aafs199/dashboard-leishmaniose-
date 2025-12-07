@@ -1,0 +1,259 @@
+
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+import numpy as np
+
+# CONFIGURAÇÃO DA PÁGINA
+st.set_page_config(
+    page_title="Leishmaniose Visceral - BH",
+    page_icon="🏥",
+    layout="wide"
+)
+
+# CABEÇALHO
+st.title("🏥 PAINEL LEISHMANIOSE VISCERAL")
+st.subheader("Belo Horizonte • Monitoramento Epidemiológico • 1994-2025")
+st.markdown("---")
+
+# MENU LATERAL
+with st.sidebar:
+    st.header("📁 CARREGAR DADOS")
+    
+    st.markdown("**Faça upload dos arquivos Excel:**")
+    
+    # Upload dos arquivos
+    arquivo1 = st.file_uploader("Dados Humanos (incidencialetalidadelv.xlsx)", type="xlsx")
+    arquivo2 = st.file_uploader("Dados por Regional (casoshumanoslvregional.xlsx)", type="xlsx")
+    arquivo3 = st.file_uploader("Dados Caninos (anual 2014-2023.xlsx)", type="xlsx")
+    
+    st.markdown("---")
+    st.info("💡 **Dica:** Use os botões acima para carregar seus dados")
+
+# FUNÇÃO PARA PROCESSAR DADOS
+def carregar_dados(arquivo):
+    if arquivo is not None:
+        try:
+            return pd.read_excel(arquivo)
+        except:
+            st.error(f"Erro ao ler {arquivo.name}")
+            return None
+    return None
+
+# CARREGAR DADOS
+dados_humanos = carregar_dados(arquivo1) if arquivo1 else None
+dados_regionais = carregar_dados(arquivo2) if arquivo2 else None
+dados_caninos = carregar_dados(arquivo3) if arquivo3 else None
+
+# SEÇÃO 1: TELA INICIAL
+if not any([dados_humanos, dados_regionais, dados_caninos]):
+    st.markdown("## 👋 Bem-vindo ao Painel de Monitoramento!")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        ### 📊 **Como usar:**
+        1. **Na barra lateral à esquerda ←**
+        2. **Clique em 'Browse files'**
+        3. **Selecione seus arquivos Excel**
+        4. **Os gráficos aparecerão automaticamente**
+        
+        ### 📁 **Arquivos necessários:**
+        - `incidencialetalidadelv.xlsx`
+        - `casoshumanoslvregional.xlsx`  
+        - `anual 2014-2023.xlsx`
+        """)
+    
+    with col2:
+        st.markdown("""
+        ### 🎯 **Funcionalidades:**
+        - 📈 Gráficos interativos
+        - 📊 Indicadores em tempo real
+        - 🗺️ Mapa de distribuição
+        - 📥 Download dos dados
+        
+        ### 🔧 **Tecnologia:**
+        - Desenvolvido em Python
+        - Interface moderna e simples
+        - Totalmente gratuito
+        """)
+    
+    st.markdown("---")
+    st.success("🚀 **Comece carregando seus dados na barra lateral!**")
+
+# SEÇÃO 2: SE HOUVER DADOS
+else:
+    # INDICADORES PRINCIPAIS
+    st.markdown("## 📊 INDICADORES-CHAVE")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("📅 Período", "1994-2025")
+    
+    with col2:
+        if dados_humanos is not None:
+            total_casos = dados_humanos.iloc[:, 1].sum() if len(dados_humanos.columns) > 1 else "N/A"
+            st.metric("🦠 Total de Casos", total_casos)
+        else:
+            st.metric("🦠 Total de Casos", "Carregue dados")
+    
+    with col3:
+        if dados_regionais is not None:
+            num_regionais = len(dados_regionais)
+            st.metric("🗺️ Regionais", num_regionais)
+        else:
+            st.metric("🗺️ Regionais", "Carregue dados")
+    
+    with col4:
+        st.metric("📈 Status", "Ativo")
+    
+    st.markdown("---")
+    
+    # GRÁFICOS
+    st.markdown("## 📈 VISUALIZAÇÕES")
+    
+    # GRÁFICO 1: DADOS HUMANOS
+    if dados_humanos is not None:
+        st.markdown("### 📊 Evolução Temporal")
+        
+        # Tentar identificar colunas
+        try:
+            # Procurar coluna de ano
+            for col in dados_humanos.columns:
+                if 'ano' in str(col).lower() or 'year' in str(col).lower():
+                    col_ano = col
+                    break
+                elif dados_humanos[col].dtype in ['int64', 'float64']:
+                    if dados_humanos[col].min() > 1900 and dados_humanos[col].max() < 2100:
+                        col_ano = col
+                        break
+            else:
+                col_ano = dados_humanos.columns[0]
+            
+            # Procurar coluna de casos
+            for col in dados_humanos.columns:
+                if 'caso' in str(col).lower() or 'case' in str(col).lower():
+                    col_casos = col
+                    break
+                elif dados_humanos[col].dtype in ['int64', 'float64']:
+                    if dados_humanos[col].max() < 10000:
+                        col_casos = col
+                        break
+            else:
+                col_casos = dados_humanos.columns[1] if len(dados_humanos.columns) > 1 else dados_humanos.columns[0]
+            
+            # Criar gráfico
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=dados_humanos[col_ano],
+                y=dados_humanos[col_casos],
+                mode='lines+markers',
+                name='Casos',
+                line=dict(color='blue', width=3)
+            ))
+            
+            fig.update_layout(
+                title=f'Evolução dos Casos ({col_ano} vs {col_casos})',
+                xaxis_title=col_ano,
+                yaxis_title=col_casos,
+                height=400
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Erro ao criar gráfico: {e}")
+            st.write("Visualização dos dados:")
+            st.dataframe(dados_humanos.head())
+    
+    # GRÁFICO 2: DADOS REGIONAIS
+    if dados_regionais is not None:
+        st.markdown("### 🗺️ Distribuição por Regional")
+        
+        try:
+            # Encontrar coluna de regionais
+            col_regional = dados_regionais.columns[0]
+            
+            # Encontrar colunas numéricas (anos)
+            colunas_numericas = []
+            for col in dados_regionais.columns[1:]:
+                try:
+                    float(str(col))
+                    colunas_numericas.append(col)
+                except:
+                    continue
+            
+            if colunas_numericas:
+                # Seletor de ano
+                ano_selecionado = st.selectbox(
+                    "Selecione o ano:",
+                    colunas_numericas,
+                    key="ano_selector"
+                )
+                
+                # Preparar dados
+                df_plot = dados_regionais[[col_regional, ano_selecionado]].copy()
+                df_plot = df_plot.sort_values(ano_selecionado, ascending=True)
+                
+                # Criar gráfico de barras
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    y=df_plot[col_regional],
+                    x=df_plot[ano_selecionado],
+                    orientation='h',
+                    marker_color='green'
+                ))
+                
+                fig.update_layout(
+                    title=f'Casos por Regional - {ano_selecionado}',
+                    xaxis_title='Número de Casos',
+                    yaxis_title='Regional',
+                    height=500
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.write("Dados regionais:")
+                st.dataframe(dados_regionais)
+                
+        except Exception as e:
+            st.error(f"Erro ao processar dados regionais: {e}")
+    
+    # SEÇÃO 3: TABELAS DE DADOS
+    st.markdown("---")
+    st.markdown("## 📋 DADOS BRUTOS")
+    
+    tabs = st.tabs(["👥 Dados Humanos", "🗺️ Dados Regionais", "🐕 Dados Caninos"])
+    
+    with tabs[0]:
+        if dados_humanos is not None:
+            st.dataframe(dados_humanos, use_container_width=True)
+        else:
+            st.info("Carregue dados humanos para ver esta tabela")
+    
+    with tabs[1]:
+        if dados_regionais is not None:
+            st.dataframe(dados_regionais, use_container_width=True)
+        else:
+            st.info("Carregue dados regionais para ver esta tabela")
+    
+    with tabs[2]:
+        if dados_caninos is not None:
+            st.dataframe(dados_caninos, use_container_width=True)
+        else:
+            st.info("Carregue dados caninos para ver esta tabela")
+    
+    # RODAPÉ
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: gray;">
+        🏥 <strong>Sistema de Monitoramento Epidemiológico</strong><br>
+        Desenvolvido para a Secretaria Municipal de Saúde • 2025
+    </div>
+    """, unsafe_allow_html=True)
+
+print("✅ Dashboard criado com sucesso!")
