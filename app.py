@@ -615,8 +615,8 @@ st.markdown("---")
 st.markdown(f"""
 <div style="text-align: center; color: #666; font-size: 0.9rem; padding: 1rem;">
     <strong>VigiLeish - Sistema de Vigilância Epidemiológica</strong><br>
-    Secretaria Municipal de Saúde de Belo Horizonte • Atividade Extensionista II - UNINTER<br>
-    CST Ciência de Dados • Aline Alice F. da Silva (RU: 5277514) • Naiara Chaves Figueiredo (RU: 5281798)<br>
+    • Atividade Extensionista II - UNINTER<br>
+    CST Ciência de Dados • Aline Alice F. da Silva (RU: 5277514) •<br>
     <small>Versão 2.0 • Mapa Interativo das Regionais de BH • {datetime.now().strftime('%d/%m/%Y %H:%M')}</small>
 </div>
 """, unsafe_allow_html=True)
