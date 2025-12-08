@@ -28,8 +28,8 @@ def carregar_dados_consolidados():
     filenames = glob.glob(DATA_PATH + "*.csv")
 
     # --- A. CONSOLIDAÇÃO DOS DADOS DE ATIVIDADES DE BH (1994-2024) ---
-    # CORREÇÃO: Usando re.search para encontrar 'anual' de forma mais robusta no nome do arquivo
-    activity_files = [f for f in filenames if re.search(r'anual', f, re.IGNORECASE)]
+    # CORREÇÃO FINAL: Usando a verificação de string simples em minúsculas (a mais robusta)
+    activity_files = [f for f in filenames if 'anual' in f.lower()]
     
     if not activity_files:
         # Se falhar aqui, o erro No objects to concatenate é acionado.
@@ -88,16 +88,13 @@ def carregar_dados_consolidados():
     return df_humanos, df_reg, df_caninos
 
 # -------------------------------------------------------------
-# CHAMADA PRINCIPAL DA FUNÇÃO DE CARREGAMENTO (e resto do código)
+# CHAMADA PRINCIPAL DA FUNÇÃO DE CARREGAMENTO
 # -------------------------------------------------------------
 try:
     dados_humanos, dados_regionais, dados_caninos = carregar_dados_consolidados()
 except Exception as e:
+    # Se o erro for o "No objects to concatenate", esta mensagem será exibida.
     st.error(f"ERRO CRÍTICO NO CARREGAMENTO DOS DADOS: Verifique se a pasta 'data' existe e contém todos os arquivos CSV originais. Detalhe do Erro: {e}")
     st.stop()
-    
-# ... (Restante do Código, Funções de Mapa, Layout, etc.) ...
-# O restante do código é o mesmo da resposta anterior.
 
-# (Omitindo o restante do layout, tabs, e CSS que você já tem para não poluir,
-# mas este bloco de código deve ser colado no lugar exato do bloco de carregamento).
+# ... (O restante do código Streamlit que você já tem, Funções de Mapa, Layout, etc., deve vir abaixo) ...
